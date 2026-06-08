@@ -10,6 +10,10 @@ By default, the server exposes one safe read-only tool:
 
 - `unanet_get_my_leave_balances` — reads your Unanet leave balances with minimized output.
 
+Example in Claude Desktop:
+
+![Claude Desktop using the Unanet connector to check leave balances](assets/screenshots/claude-leave-balance-example.png)
+
 With explicit opt-in, the server can also expose additional Platform REST read tools:
 
 - `unanet_get_projects`
