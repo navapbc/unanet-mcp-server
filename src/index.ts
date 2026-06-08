@@ -26,7 +26,7 @@ import {
 	getProjectStatusTool,
 } from "./tools/projects.js";
 import {
-	submitTimesheetTool,
+	updateTimesheetTool,
 	getTimesheetsTool,
 	getMyTimesheetProjectsTool,
 	submitExpenseTool,
@@ -128,7 +128,7 @@ const legacyReadTools = [
 
 const mutatingTools = [
 	updateProjectBudgetTool,
-	submitTimesheetTool,
+	updateTimesheetTool,
 	submitExpenseTool,
 	approveTimesheetTool,
 	createContactTool,

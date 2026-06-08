@@ -204,7 +204,7 @@ UNANET_ENABLE_WRITE_TOOLS=true
 
 | Tool | Current behavior |
 | --- | --- |
-| `unanet_submit_timesheet` | Live write; adds confirmed timeslip rows to an existing timesheet and requires `confirm: true`. |
+| `unanet_update_timesheet` | Live write; appends timeslip rows to your in-progress timesheet (does not submit for approval, does not overwrite existing rows) and requires `confirm: true`. |
 | `unanet_submit_expense` | Disabled/fail-closed until expense allocation keys are modeled. |
 | `unanet_update_project_budget` | Disabled/fail-closed; Platform REST requires a full project update payload. |
 | `unanet_update_lead` | Disabled/fail-closed; no Platform REST lead endpoint identified. |

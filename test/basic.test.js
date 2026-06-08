@@ -203,10 +203,10 @@ describe("Unanet MCP Server Basic Tests", () => {
 		});
 
 		it("should add confirmed Platform REST timesheet entries", async () => {
-			const { submitTimesheetTool } = await import(
+			const { updateTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
-			const result = await submitTimesheetTool.handler(
+			const result = await updateTimesheetTool.handler(
 				{
 					confirm: true,
 					entries: [
@@ -234,10 +234,10 @@ describe("Unanet MCP Server Basic Tests", () => {
 		});
 
 		it("should reject out-of-period timesheet writes", async () => {
-			const { submitTimesheetTool } = await import(
+			const { updateTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
-			const result = await submitTimesheetTool.handler(
+			const result = await updateTimesheetTool.handler(
 				{
 					confirm: true,
 					entries: [
@@ -260,10 +260,10 @@ describe("Unanet MCP Server Basic Tests", () => {
 		});
 
 		it("should reject writes to non-editable timesheets", async () => {
-			const { submitTimesheetTool } = await import(
+			const { updateTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
-			const result = await submitTimesheetTool.handler(
+			const result = await updateTimesheetTool.handler(
 				{
 					confirm: true,
 					entries: [
@@ -286,13 +286,13 @@ describe("Unanet MCP Server Basic Tests", () => {
 		});
 
 		it("should require confirmation for live write tools", async () => {
-			const { approveTimesheetTool, submitTimesheetTool } = await import(
+			const { approveTimesheetTool, updateTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
 			const { createContactTool } = await import("../dist/tools/contacts.js");
 
 			expect(() =>
-				submitTimesheetTool.inputSchema.parse({
+				updateTimesheetTool.inputSchema.parse({
 					entries: [{ projectId: "101", date: "2026-01-01", hours: 1 }],
 				}),
 			).toThrow();
@@ -399,7 +399,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 					expect(response.result.tools).toBeInstanceOf(Array);
 					const toolNames = response.result.tools.map((tool) => tool.name);
 					expect(toolNames).toContain("unanet_get_my_leave_balances");
-					expect(toolNames).not.toContain("unanet_submit_timesheet");
+					expect(toolNames).not.toContain("unanet_update_timesheet");
 					expect(toolNames).not.toContain("unanet_update_project_budget");
 					resolve();
 				});

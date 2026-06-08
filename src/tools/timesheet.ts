@@ -362,10 +362,10 @@ function buildNewTimeslip(entry: any, project: any, fullTimesheet: any): any {
 }
 
 // Submit timesheet tool
-export const submitTimesheetTool = {
-	name: "unanet_submit_timesheet",
+export const updateTimesheetTool = {
+	name: "unanet_update_timesheet",
 	description:
-		"Add confirmed time entries to your Unanet timesheet using Platform REST timeslip rows. Use projectId as a project key, code, or name search.",
+		"Add time entries (timeslip rows) to your in-progress Unanet timesheet via Platform REST. This does NOT submit the timesheet for approval and does NOT change or overwrite existing rows: it reads the current timeslips, appends the new entries, and saves the full set. Exact-duplicate rows are rejected unless allowDuplicate=true. Use projectId as a project key, code, or name search.",
 	inputSchema: z.object({
 		entries: z.array(timeEntrySchema).min(1),
 		confirm: z
@@ -515,7 +515,11 @@ function shiftIsoDate(date: string, deltaDays: number): string {
 	return parsed.toISOString().split("T")[0];
 }
 
-function periodsOverlap(timesheet: any, startDate: string, endDate: string): boolean {
+function periodsOverlap(
+	timesheet: any,
+	startDate: string,
+	endDate: string,
+): boolean {
 	const { startDate: begin, endDate: end } = timesheetPeriod(timesheet);
 	if (begin === "unknown" || end === "unknown") {
 		return true;
