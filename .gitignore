@@ -8,8 +8,7 @@ dist/
 .env
 .env.local
 .env.*.local
-# Keep .env.test for testing
-!.env.test
+.env.test
 
 # IDE files
 .vscode/
@@ -52,3 +51,10 @@ STRATEGY-*.md
 CONTACTS-*.md
 *-TARGETS.md
 *-OUTREACH.md
+# Local Pi runtime state and planning/security artifacts
+.atl/
+judgment-day/
+unanet-plan/
+
+# Pi runtime state
+.pi/

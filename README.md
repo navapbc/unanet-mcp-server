@@ -37,13 +37,12 @@
 
 ## 🎯 What You Can Do
 
-Ask Claude natural questions about your Unanet data:
+Ask Claude natural questions about your Unanet data. By default, this server starts in the safe read-only Nava leave-balance mode:
 
-✅ **"Show me all projects over budget"**
-✅ **"Submit 8 hours to Project Alpha for today"**
-✅ **"Generate a compliance report for Q4"**
-✅ **"Which team members are overallocated next month?"**
-✅ **"Create an invoice for project DEF456"**
+✅ **"Show my Unanet leave balances"**
+✅ **"Check my PTO balance for the last two weeks"**
+
+Legacy project, financial, and write examples require explicit opt-in flags and additional safeguards before live use. Do not enable mutating tools against company Unanet until preview/confirmation controls are implemented.
 
 No more memorizing menu paths or waiting for reports to load!
 
@@ -81,31 +80,37 @@ Recommended Action: Schedule mid-project review for Alpha this week
 ### Tools Available
 
 #### Project Management
-- `unanet_get_projects` - List all projects with filtering options
-- `unanet_get_project_details` - Get detailed information about a specific project
-- `unanet_update_project_budget` - Update project budget
-- `unanet_get_project_status` - Get project status and dashboard metrics
+- `unanet_get_projects` - List all projects with filtering options (legacy read tool; requires `UNANET_ENABLE_LEGACY_READ_TOOLS=true`)
+- `unanet_get_project_details` - Get detailed information about a specific project (legacy read tool; requires `UNANET_ENABLE_LEGACY_READ_TOOLS=true`)
+- `unanet_update_project_budget` - Update project budget (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
+- `unanet_get_project_status` - Get project status and dashboard metrics (legacy read tool; requires `UNANET_ENABLE_LEGACY_READ_TOOLS=true`)
+
+#### Personal Leave Balances
+- `unanet_get_my_leave_balances` - Read your Nava Unanet leave balances using Platform REST bearer-token auth. Registered by default in safe read-only mode.
 
 #### Time & Expense Tracking
-- `unanet_submit_timesheet` - Submit time entries
-- `unanet_get_timesheets` - Retrieve timesheets for a date range
-- `unanet_submit_expense` - Submit expense reports
-- `unanet_approve_timesheet` - Approve submitted timesheets
+- `unanet_submit_timesheet` - Submit time entries (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
+- `unanet_get_timesheets` - Retrieve timesheets for a date range (legacy read tool; requires `UNANET_ENABLE_LEGACY_READ_TOOLS=true`)
+- `unanet_submit_expense` - Submit expense reports (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
+- `unanet_approve_timesheet` - Approve submitted timesheets (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
 
 #### Contact Management
-- `unanet_create_contact` - Create new contacts
-- `unanet_update_lead` - Update lead information
-- `unanet_create_opportunity` - Create new opportunities
-- `unanet_get_company_info` - Get company details
+- `unanet_create_contact` - Create new contacts (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
+- `unanet_update_lead` - Update lead information (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
+- `unanet_create_opportunity` - Create new opportunities (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
+- `unanet_get_company_info` - Get company details (legacy read tool; requires `UNANET_ENABLE_LEGACY_READ_TOOLS=true`)
 
 #### Financial Operations
-- `unanet_get_billing_status` - Get project billing information
-- `unanet_generate_invoice` - Generate project invoices
-- `unanet_get_financial_report` - Generate various financial reports
+- `unanet_get_billing_status` - Get project billing information (legacy read tool; requires `UNANET_ENABLE_LEGACY_READ_TOOLS=true`)
+- `unanet_generate_invoice` - Generate project invoices (requires `UNANET_ENABLE_WRITE_TOOLS=true`)
+- `unanet_get_financial_report` - Generate various financial reports (legacy read tool; requires `UNANET_ENABLE_LEGACY_READ_TOOLS=true`)
 
 ### Resources Available
-- `unanet://projects/active` - List of active projects
-- `unanet://timesheets/templates` - Timesheet templates and common entries
+
+Legacy resources are not registered in the default safe read-only mode. They require `UNANET_ENABLE_LEGACY_READ_TOOLS=true` plus legacy API credentials.
+
+- `unanet://projects/active` - List of active projects (legacy gated)
+- `unanet://timesheets/templates` - Timesheet templates and common entries (legacy gated)
 
 ## Installation
 
@@ -125,7 +130,7 @@ That's it! See [Windows Setup Guide](README-WINDOWS.md) for detailed instruction
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/culstrup/unanet-mcp-server.git
+git clone https://github.com/navapbc/unanet-mcp-server.git
 cd unanet-mcp-server
 ```
 
@@ -149,14 +154,27 @@ cp .env.example .env
 
 ### Environment Variables
 
-Create a `.env` file with your Unanet credentials:
+Create a `.env` file with your Unanet credentials. For Nava local read-only use, start with the security-first Platform REST mode:
 
 ```env
 UNANET_USERNAME=your-username
 UNANET_PASSWORD=your-password
+UNANET_BASE_URL=https://navapbc.unanet.biz
+# Optional; defaults to NavaUnanetMCP
+UNANET_APP_NAME=NavaUnanetMCP
+```
+
+Safe defaults:
+- `UNANET_BASE_URL` is tenant-locked to `https://navapbc.unanet.biz` unless additional exact origins are configured with `UNANET_ALLOWED_BASE_URLS`.
+- `http://127.0.0.1` / `http://localhost` are accepted only when `UNANET_ALLOW_INSECURE_LOCAL_MOCK=true` for local mock testing.
+- Mutating tools are not registered unless `UNANET_ENABLE_WRITE_TOOLS=true`.
+- Legacy read tools that use the older API key/firm-code client are not registered unless `UNANET_ENABLE_LEGACY_READ_TOOLS=true`.
+
+Legacy tools require the additional credentials below and should not be enabled for the first Nava leave-balance slice:
+
+```env
 UNANET_API_KEY=your-api-key
 UNANET_FIRM_CODE=your-firm-code
-UNANET_BASE_URL=https://your-instance.unanet.com
 ```
 
 ### Claude Desktop Configuration
@@ -175,9 +193,8 @@ Add the following to your Claude Desktop configuration file:
       "env": {
         "UNANET_USERNAME": "your-username",
         "UNANET_PASSWORD": "your-password",
-        "UNANET_API_KEY": "your-api-key",
-        "UNANET_FIRM_CODE": "your-firm-code",
-        "UNANET_BASE_URL": "https://your-instance.unanet.com"
+        "UNANET_BASE_URL": "https://navapbc.unanet.biz",
+        "UNANET_APP_NAME": "NavaUnanetMCP"
       }
     }
   }
@@ -188,30 +205,34 @@ Add the following to your Claude Desktop configuration file:
 
 Once configured, you can interact with Unanet through Claude:
 
-### Project Management
+### Default Safe Read-Only Mode
+```
+"Show my Unanet leave balances"
+"Check my PTO balance for the last two weeks"
+```
+
+### Legacy Read Tools (explicit opt-in)
+
+The following examples require `UNANET_ENABLE_LEGACY_READ_TOOLS=true` and legacy API credentials. Confirm the API contract and data-owner approval before using them with company data.
+
 ```
 "Show me all active projects"
 "Get details for project ABC123"
-"Update the budget for project XYZ to $150,000"
 "What's the status of the government contract project?"
-```
-
-### Time Tracking
-```
-"Submit 8 hours for project ABC123 for today"
 "Show my timesheets for last week"
-"Approve timesheet TS-2024-001"
-```
-
-### Financial Reports
-```
 "Generate a project profitability report for Q4"
 "Show billing status for project DEF456"
-"Create an invoice for the last billing period"
 ```
 
-### Contact Management
+### Mutating Tools (unsafe legacy opt-in)
+
+These examples require `UNANET_ENABLE_WRITE_TOOLS=true`. Write mode is intentionally disabled by default and should not be used against live Nava Unanet until preview/confirmation safeguards and per-tool allowlists are implemented.
+
 ```
+"Update the budget for project XYZ to $150,000"
+"Submit 8 hours for project ABC123 for today"
+"Approve timesheet TS-2024-001"
+"Create an invoice for the last billing period"
 "Create a new contact: John Smith from ABC Corp"
 "Update the lead status to 'Proposal' with 75% probability"
 "Create a new opportunity worth $500k closing next month"
@@ -255,9 +276,13 @@ src/
 
 - Never commit your `.env` file
 - Use environment variables for all sensitive data
-- The server implements rate limiting protection
-- All API calls use HTTPS
-- Credentials are transmitted using Basic Auth + API Key
+- The server defaults to read-only Nava leave-balance access
+- Production `UNANET_BASE_URL` values must use HTTPS and match the approved tenant allowlist
+- Local insecure mock URLs require `UNANET_ALLOW_INSECURE_LOCAL_MOCK=true`
+- Mutating tools require explicit `UNANET_ENABLE_WRITE_TOOLS=true`; write mode is legacy/unsafe until preview-confirmation safeguards are added
+- Legacy read tools and resources require explicit `UNANET_ENABLE_LEGACY_READ_TOOLS=true`
+- The Nava leave-balance tool uses Platform REST bearer-token auth with in-memory token caching only
+- Development and tests require Node.js 20+ because the secure Vitest 4 toolchain requires Node 20 or newer
 
 ## Troubleshooting
 
