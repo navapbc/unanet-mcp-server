@@ -1,13 +1,14 @@
 # Unanet MCP Server for Claude Desktop
 
 > [!WARNING]
-> **Be very careful with timesheet writes. Always keep a human in the loop.**
+> **Writing to timesheets is turned off by default. If you decide to change
+> this, be very careful, and always keep a human in the loop.**
 > These tools can add, edit, delete, and submit real time entries on a live
 > government-contract ERP. An AI assistant can misread a request or pick the
 > wrong project, date, or hours. **Before submitting any timesheet, review it
-> yourself in Unanet (or via `unanet_get_timesheets`) and confirm every entry
-> is correct.** Submission is one-way and locks the timesheet. Never let an
-> agent submit on your behalf without your own final check.
+> yourself in Unanet and confirm every entry is correct.** Submission is
+> one-way and locks the timesheet. Never let an agent submit on your behalf
+> without your own final check.
 
 This fork lets Claude Desktop talk to Nava's Unanet GovCon instance through the Model Context Protocol (MCP). It has been substantially updated from the original API-key design to use Unanet Platform REST: username/password login, short-lived bearer tokens, and safe-by-default tool registration.
 
