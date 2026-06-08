@@ -202,17 +202,49 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(result.projects[0].projectCode).toBe("PRJ-001");
 		});
 
-		it("should fail closed for incomplete timesheet write tool", async () => {
+		it("should add confirmed Platform REST timesheet entries", async () => {
 			const { submitTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
 			const result = await submitTimesheetTool.handler(
 				{
+					confirm: true,
 					entries: [
 						{
-							projectId: "101",
+							projectId: "AI-PROJECT",
 							date: "2026-01-01",
-							hours: 8,
+							hours: 1,
+							description: "Built MCP connector",
+						},
+					],
+				},
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
+			);
+
+			expect(result.success).toBe(true);
+			expect(result.entries[0]).toMatchObject({
+				projectKey: 102,
+				hours: 1,
+				comments: "Built MCP connector",
+			});
+		});
+
+		it("should reject out-of-period timesheet writes", async () => {
+			const { submitTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const result = await submitTimesheetTool.handler(
+				{
+					confirm: true,
+					entries: [
+						{
+							projectId: "AI-PROJECT",
+							date: "2026-01-20",
+							hours: 1,
 						},
 					],
 				},
@@ -224,15 +256,46 @@ describe("Unanet MCP Server Basic Tests", () => {
 			);
 
 			expect(result.success).toBe(false);
-			expect(result.error).toContain("disabled");
+			expect(result.error).toContain("outside the resolved timesheet period");
+		});
+
+		it("should reject writes to non-editable timesheets", async () => {
+			const { submitTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const result = await submitTimesheetTool.handler(
+				{
+					confirm: true,
+					entries: [
+						{
+							projectId: "AI-PROJECT",
+							date: "2026-01-02",
+							hours: 1,
+						},
+					],
+				},
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
+			);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("not editable");
 		});
 
 		it("should require confirmation for live write tools", async () => {
-			const { approveTimesheetTool } = await import(
+			const { approveTimesheetTool, submitTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
 			const { createContactTool } = await import("../dist/tools/contacts.js");
 
+			expect(() =>
+				submitTimesheetTool.inputSchema.parse({
+					entries: [{ projectId: "101", date: "2026-01-01", hours: 1 }],
+				}),
+			).toThrow();
 			expect(() =>
 				approveTimesheetTool.inputSchema.parse({ timesheetId: "201" }),
 			).toThrow();

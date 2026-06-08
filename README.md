@@ -120,7 +120,7 @@ To expose write-capable tools:
 UNANET_ENABLE_WRITE_TOOLS=true
 ```
 
-Only enable write tools when you intentionally want Claude to see them. Several write tools still fail closed until they have safe Platform REST implementations.
+Only enable write tools when you intentionally want Claude to see them. Timesheet writes require `confirm: true`; several other legacy write tools still fail closed until they have safe Platform REST implementations.
 
 ### 3. Add the server to Claude Desktop
 
@@ -202,7 +202,7 @@ UNANET_ENABLE_WRITE_TOOLS=true
 
 | Tool | Current behavior |
 | --- | --- |
-| `unanet_submit_timesheet` | Disabled/fail-closed until safe timeslip row updates are implemented. |
+| `unanet_submit_timesheet` | Live write; adds confirmed timeslip rows to an existing timesheet and requires `confirm: true`. |
 | `unanet_submit_expense` | Disabled/fail-closed until expense allocation keys are modeled. |
 | `unanet_update_project_budget` | Disabled/fail-closed; Platform REST requires a full project update payload. |
 | `unanet_update_lead` | Disabled/fail-closed; no Platform REST lead endpoint identified. |

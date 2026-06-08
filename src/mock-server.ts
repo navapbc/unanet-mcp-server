@@ -125,14 +125,15 @@ app.get("/platform/rest/projects/:id", (req, res) => {
 	});
 });
 
-app.post("/platform/rest/me/time/search", (_req, res) => {
+app.post("/platform/rest/me/time/search", (req, res) => {
+	const workDate = req.body?.workDate;
 	res.json({
 		items: [
 			{
-				key: 201,
+				key: workDate === "2026-01-02" ? 202 : 201,
 				beginDate: "2026-01-01",
 				endDate: "2026-01-15",
-				status: "INUSE",
+				status: workDate === "2026-01-02" ? "SUBMITTED" : "INUSE",
 				hours: 8,
 			},
 		],
@@ -140,11 +141,12 @@ app.post("/platform/rest/me/time/search", (_req, res) => {
 });
 
 app.get("/platform/rest/me/time/:id", (req, res) => {
+	const key = Number(req.params.id);
 	res.json({
-		key: Number(req.params.id),
+		key,
 		beginDate: "2026-01-01",
 		endDate: "2026-01-15",
-		status: "INUSE",
+		status: key === 202 ? "SUBMITTED" : "INUSE",
 		timeslips: [
 			{
 				key: 301,
@@ -156,6 +158,36 @@ app.get("/platform/rest/me/time/:id", (req, res) => {
 				laborCategory: { key: 384, name: "Software Engineer" },
 			},
 		],
+	});
+});
+
+app.get("/platform/rest/time/:id/projects", (_req, res) => {
+	res.json({
+		items: [
+			{
+				key: 101,
+				projectCode: "PRJ-001",
+				title: "Test Project Alpha",
+				payCodeKey: 1,
+				projectTypeKey: 17,
+				laborCategoryKey: 384,
+			},
+			{
+				key: 102,
+				projectCode: "AI-PROJECT",
+				title: "AI Internal Enablement",
+				payCodeKey: 1,
+				projectTypeKey: 17,
+				laborCategoryKey: 384,
+			},
+		],
+	});
+});
+
+app.put("/platform/rest/me/time/:id", (req, res) => {
+	res.json({
+		key: Number(req.params.id),
+		updatedTimeslips: req.body?.timeslips?.length ?? 0,
 	});
 });
 
