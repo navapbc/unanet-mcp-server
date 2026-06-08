@@ -20,6 +20,7 @@ With explicit opt-in, the server can also expose additional Platform REST read t
 - `unanet_get_project_details`
 - `unanet_get_project_status`
 - `unanet_get_timesheets`
+- `unanet_get_my_timesheet_projects`
 - `unanet_get_company_info`
 - `unanet_get_billing_status`
 - `unanet_get_financial_report`
@@ -187,7 +188,8 @@ UNANET_ENABLE_LEGACY_READ_TOOLS=true
 | `unanet_get_projects` | Search projects with optional filters. |
 | `unanet_get_project_details` | Retrieve a project by key/id. |
 | `unanet_get_project_status` | Retrieve project status-style summary data. |
-| `unanet_get_timesheets` | Search your timesheets by date range. |
+| `unanet_get_timesheets` | Search your timesheets by date range, including entry-level timeslip summaries. |
+| `unanet_get_my_timesheet_projects` | List projects available to charge on your timesheet for a given date. |
 | `unanet_get_company_info` | Retrieve organization/company details. |
 | `unanet_get_billing_status` | Retrieve billing-adjacent project invoice setup/account data. |
 | `unanet_get_financial_report` | Limited invoice-search-backed financial reporting. |

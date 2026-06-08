@@ -483,10 +483,91 @@ export const submitTimesheetTool = {
 	},
 };
 
+function timesheetPeriod(timesheet: any): {
+	startDate: string;
+	endDate: string;
+} {
+	return {
+		startDate:
+			timesheet.beginDate ??
+			timesheet.periodStart ??
+			timesheet.timePeriod?.beginDate ??
+			"unknown",
+		endDate:
+			timesheet.endDate ??
+			timesheet.periodEnd ??
+			timesheet.timePeriod?.endDate ??
+			"unknown",
+	};
+}
+
+// Platform REST timesheet search only filters on the period BEGIN date
+// (beginDateStart/beginDateEnd) or a single workDate. To capture a sheet
+// that began before the requested range but still covers it, widen the
+// begin-date search backward by one period length, then keep only sheets
+// whose period overlaps the requested [startDate, endDate] window.
+function shiftIsoDate(date: string, deltaDays: number): string {
+	const parsed = new Date(`${date}T00:00:00Z`);
+	if (Number.isNaN(parsed.getTime())) {
+		return date;
+	}
+	parsed.setUTCDate(parsed.getUTCDate() + deltaDays);
+	return parsed.toISOString().split("T")[0];
+}
+
+function periodsOverlap(timesheet: any, startDate: string, endDate: string): boolean {
+	const { startDate: begin, endDate: end } = timesheetPeriod(timesheet);
+	if (begin === "unknown" || end === "unknown") {
+		return true;
+	}
+	return begin <= endDate && end >= startDate;
+}
+
+function summarizeTimeslip(timeslip: any): Record<string, unknown> {
+	return {
+		key: timeslip.key,
+		workDate: timeslip.workDate,
+		hoursWorked: timeslip.hoursWorked,
+		project: timeslip.project
+			? {
+					key: timeslip.project.key,
+					name: timeslip.project.name,
+				}
+			: null,
+		task: timeslip.task
+			? {
+					key: timeslip.task.key,
+					name: timeslip.task.name,
+				}
+			: null,
+		projectType: timeslip.projectType?.name ?? null,
+		payCode: timeslip.payCode?.name ?? null,
+		laborCategory: timeslip.laborCategory?.name ?? null,
+		location: timeslip.location?.name ?? null,
+		comments: timeslip.comments ?? null,
+	};
+}
+
+function summarizeProject(project: any): Record<string, unknown> {
+	return {
+		key: projectKey(project),
+		code: project.projectCode ?? project.code ?? null,
+		title: project.title ?? project.name ?? null,
+		taskRequired: project.taskRequired ?? false,
+		locationRequired: project.locationRequired ?? false,
+		projectTypeKey: project.projectTypeKey ?? project.projectType?.key ?? null,
+		payCodeKey: project.payCodeKey ?? project.payCode?.key ?? null,
+		laborCategoryKey:
+			project.laborCategoryKey ?? project.laborCategory?.key ?? null,
+		locationKey: project.locationKey ?? project.location?.key ?? null,
+	};
+}
+
 // Get timesheets tool
 export const getTimesheetsTool = {
 	name: "unanet_get_timesheets",
-	description: "Retrieve timesheets for a date range via Platform REST",
+	description:
+		"Retrieve timesheets for a date range via Platform REST, including entry-level timeslip summaries.",
 	inputSchema: z.object({
 		startDate: z.string().describe("Start date in YYYY-MM-DD format"),
 		endDate: z.string().describe("End date in YYYY-MM-DD format"),
@@ -494,13 +575,14 @@ export const getTimesheetsTool = {
 			.enum(["Draft", "Submitted", "Approved", "Rejected", "All"])
 			.optional()
 			.default("All"),
+		limit: z.number().int().positive().max(50).optional().default(10),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
 		const client = createUnanetClient(auth);
 
 		try {
 			const criteria: Record<string, unknown> = {
-				beginDateStart: args.startDate,
+				beginDateStart: shiftIsoDate(args.startDate, -31),
 				beginDateEnd: args.endDate,
 			};
 			if (args.status !== "All") {
@@ -508,21 +590,87 @@ export const getTimesheetsTool = {
 			}
 
 			const response = await client.post("/me/time/search", criteria, {
-				params: { page: 1, pageSize: 50 },
+				params: { page: 1, pageSize: Math.max(args.limit, 31) },
 			});
-			const timesheets = itemsFromResponse<any>(response.data);
+			const timesheets = itemsFromResponse<any>(response.data)
+				.filter((ts) => periodsOverlap(ts, args.startDate, args.endDate))
+				.slice(0, args.limit);
+			const detailedTimesheets = await Promise.all(
+				timesheets.map(async (timesheet) => {
+					try {
+						return await getTimesheet(client, timesheet);
+					} catch {
+						return timesheet;
+					}
+				}),
+			);
 
 			return {
 				success: true,
-				count: timesheets.length,
-				timesheets: timesheets.map((ts) => ({
-					id: ts.id ?? ts.key,
-					period: `${ts.periodStart ?? ts.beginDate ?? "unknown"} to ${ts.periodEnd ?? ts.endDate ?? "unknown"}`,
-					status: ts.status,
-					totalHours: ts.totalHours ?? ts.hours,
-					totalBillableHours: ts.totalBillableHours ?? ts.billableHours,
-					entries: ts.entries?.length ?? ts.details?.length ?? 0,
-				})),
+				count: detailedTimesheets.length,
+				timesheets: detailedTimesheets.map((ts) => {
+					const period = timesheetPeriod(ts);
+					const timeslips = ts.timeslips ?? [];
+					return {
+						id: ts.id ?? ts.key,
+						period: `${period.startDate} to ${period.endDate}`,
+						status: ts.status,
+						totalHours: ts.totalHours ?? ts.hours,
+						totalBillableHours: ts.totalBillableHours ?? ts.billableHours,
+						entries: timeslips.length,
+						timeslips: timeslips.map(summarizeTimeslip),
+					};
+				}),
+			};
+		} catch (error: any) {
+			return {
+				success: false,
+				error: error.message,
+			};
+		}
+	},
+};
+
+export const getMyTimesheetProjectsTool = {
+	name: "unanet_get_my_timesheet_projects",
+	description:
+		"List projects available to charge on your timesheet for a given date.",
+	inputSchema: z.object({
+		date: z
+			.string()
+			.optional()
+			.describe("Date in YYYY-MM-DD format. Defaults to today."),
+		search: z
+			.string()
+			.optional()
+			.describe("Optional code/title search text, e.g. AI or New Jersey."),
+		limit: z.number().int().positive().max(500).optional().default(100),
+	}),
+	handler: async (args: any, auth: UnanetAuth) => {
+		const client = createUnanetClient(auth);
+		const workDate = args.date ?? formatDate();
+
+		try {
+			const timesheetRef = await findTimesheet(client, workDate);
+			const timesheetKey = timesheetRef.key ?? timesheetRef.id;
+			const projects = await getAvailableProjects(client, timesheetKey);
+			const search = String(args.search ?? "")
+				.trim()
+				.toLowerCase();
+			const filtered = search
+				? projects.filter((project) =>
+						search.length <= 3
+							? projectSearchTokens(project).includes(search)
+							: projectSearchText(project).includes(search),
+					)
+				: projects;
+
+			return {
+				success: true,
+				date: workDate,
+				timesheetKey,
+				count: filtered.length,
+				projects: filtered.slice(0, args.limit).map(summarizeProject),
 			};
 		} catch (error: any) {
 			return {

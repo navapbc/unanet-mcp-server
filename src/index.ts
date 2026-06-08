@@ -28,6 +28,7 @@ import {
 import {
 	submitTimesheetTool,
 	getTimesheetsTool,
+	getMyTimesheetProjectsTool,
 	submitExpenseTool,
 	approveTimesheetTool,
 } from "./tools/timesheet.js";
@@ -119,6 +120,7 @@ const legacyReadTools = [
 	getProjectDetailsTool,
 	getProjectStatusTool,
 	getTimesheetsTool,
+	getMyTimesheetProjectsTool,
 	getCompanyInfoTool,
 	getBillingStatusTool,
 	getFinancialReportTool,

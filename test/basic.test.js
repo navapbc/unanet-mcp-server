@@ -309,6 +309,37 @@ describe("Unanet MCP Server Basic Tests", () => {
 			).toThrow();
 		});
 
+		it("should return entry-level timesheet detail and available projects", async () => {
+			const { getTimesheetsTool, getMyTimesheetProjectsTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
+
+			const timesheets = await getTimesheetsTool.handler(
+				{
+					startDate: "2026-01-01",
+					endDate: "2026-01-15",
+					status: "All",
+					limit: 1,
+				},
+				auth,
+			);
+			const projects = await getMyTimesheetProjectsTool.handler(
+				{ date: "2026-01-01", search: "AI" },
+				auth,
+			);
+
+			expect(timesheets.success).toBe(true);
+			expect(timesheets.timesheets[0].entries).toBe(1);
+			expect(timesheets.timesheets[0].timeslips[0].project.key).toBe(101);
+			expect(projects.success).toBe(true);
+			expect(projects.projects[0].code).toBe("AI-PROJECT");
+		});
+
 		it("should serve migrated Platform REST resources when enabled", async () => {
 			const { projectListResource, timesheetTemplatesResource } = await import(
 				"../dist/resources/reports.js"
