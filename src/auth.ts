@@ -170,6 +170,14 @@ function safeUrlForLog(url?: string): string {
 		.replace(/token=([^&]+)/gi, "token=***");
 }
 
+function apiError(message: string, status?: number): Error {
+	const err = new Error(message);
+	if (status !== undefined) {
+		(err as Error & { status?: number }).status = status;
+	}
+	return err;
+}
+
 function handleApiError(error: any): never {
 	if (error.response) {
 		const status = error.response.status;
@@ -179,25 +187,31 @@ function handleApiError(error: any): never {
 
 		switch (status) {
 			case 401:
-				throw new Error(
+				throw apiError(
 					"Authentication failed. Please check your credentials.",
+					status,
 				);
 			case 403:
-				throw new Error("Access forbidden. Please check your API permissions.");
+				throw apiError(
+					"Access forbidden. Please check your API permissions.",
+					status,
+				);
 			case 429:
-				throw new Error("Rate limit exceeded. Please try again later.");
+				throw apiError("Rate limit exceeded. Please try again later.", status);
 			case 404:
-				throw new Error(
+				throw apiError(
 					"Resource not found. Please check the ID and try again.",
+					status,
 				);
 			case 500:
 			case 502:
 			case 503:
-				throw new Error(
+				throw apiError(
 					"Unanet service is temporarily unavailable. Please try again later.",
+					status,
 				);
 			default:
-				throw new Error(`API error: ${status} ${statusText}`);
+				throw apiError(`API error: ${status} ${statusText}`, status);
 		}
 	}
 

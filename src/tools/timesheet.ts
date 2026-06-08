@@ -229,7 +229,9 @@ function timeslipToUpdate(timeslip: any): Record<string, unknown> {
 		payCodeKey: timeslip.payCode?.key ?? timeslip.payCodeKey,
 		workDate: timeslip.workDate,
 		hoursWorked: timeslip.hoursWorked,
-		comments: timeslip.comments || undefined,
+		// Use ?? not ||: an explicit empty string means "clear this comment" and
+		// must be sent, while null/undefined (never had a comment) is omitted.
+		comments: timeslip.comments ?? undefined,
 		titos: timeslip.titos,
 		udfs: timeslip.udfs,
 	});
@@ -247,10 +249,8 @@ function removeUndefined(
 // pay code, project type, and work date. Unanet rejects a second row for the
 // same cell, so adds must detect this and edit instead.
 function isSameCell(existingTimeslip: any, newTimeslip: any): boolean {
-	const sameKey = (
-		existingValue: unknown,
-		newValue: unknown,
-	): boolean => numericKey(existingValue) === numericKey(newValue);
+	const sameKey = (existingValue: unknown, newValue: unknown): boolean =>
+		numericKey(existingValue) === numericKey(newValue);
 	return (
 		existingTimeslip.workDate === newTimeslip.workDate &&
 		sameKey(
@@ -619,9 +619,7 @@ export const updateTimesheetTool = {
 				});
 				if (
 					!args.allowDuplicate &&
-					sheet.timeslips.some((timeslip) =>
-						isDuplicate(timeslip, newTimeslip),
-					)
+					sheet.timeslips.some((timeslip) => isDuplicate(timeslip, newTimeslip))
 				) {
 					return {
 						success: false,
@@ -638,16 +636,24 @@ export const updateTimesheetTool = {
 				const sameCell = sheet.timeslips.find((timeslip) =>
 					isSameCell(timeslip, newTimeslip),
 				);
-				if (sameCell) {
+				if (sameCell && Number(sameCell.hoursWorked) > 0) {
 					return {
 						success: false,
-						error: `A time entry already exists for ${projectDisplay(project)} on ${workDate} (${sameCell.hoursWorked ?? 0} hours). Unanet allows only one entry per project/day, so use unanet_edit_timeslip to change its hours or comment instead of adding another.`,
+						error: `A time entry already exists for ${projectDisplay(project)} on ${workDate} (${sameCell.hoursWorked} hours). Unanet allows only one entry per project/day, so use unanet_edit_timeslip to change its hours or comment instead of adding another.`,
 						workDate,
 						existingRow: summarizeTimeslip(sameCell),
 					};
 				}
 
-				sheet.timeslips.push(newTimeslip);
+				if (sameCell) {
+					// A previously-cleared (0-hour) cell still lingers on the sheet.
+					// Reuse it so "delete then re-add" works, instead of blocking on a
+					// ghost row the API would also reject as a duplicate cell.
+					sameCell.hoursWorked = newTimeslip.hoursWorked;
+					sameCell.comments = newTimeslip.comments ?? "";
+				} else {
+					sheet.timeslips.push(newTimeslip);
+				}
 				sheet.dirty = true;
 				addedEntries.push({
 					workDate,
@@ -658,10 +664,21 @@ export const updateTimesheetTool = {
 				});
 			}
 
-			// Phase 2 (commit): one PUT per affected timesheet.
+			// Phase 2 (commit). Unanet has no cross-timesheet transaction, so a
+			// batch that spans more than one timesheet could partially commit if a
+			// later PUT failed. Refuse that case outright: every committable batch
+			// touches exactly one timesheet and is therefore a single atomic PUT.
 			const dirtySheets = [...sheets.values()].filter((sheet) => sheet.dirty);
-			for (let index = 0; index < dirtySheets.length; index++) {
-				const sheet = dirtySheets[index];
+			if (dirtySheets.length > 1) {
+				return {
+					success: false,
+					error:
+						"This batch spans multiple timesheets (different pay periods). Nothing was written. Submit one period at a time so each write stays atomic.",
+					timesheetKeys: dirtySheets.map((sheet) => sheet.timesheetKey),
+				};
+			}
+			const sheet = dirtySheets[0];
+			if (sheet) {
 				try {
 					await commitTimeslips(
 						client,
@@ -670,17 +687,16 @@ export const updateTimesheetTool = {
 						sheet.fullTimesheet,
 					);
 				} catch (commitError: any) {
-					// A 400 here usually means Unanet rejected a row the cell guard
-					// did not catch. Translate it instead of leaking a bare 400, and
-					// disclose any timesheets already committed in this batch.
-					const committed = dirtySheets
-						.slice(0, index)
-						.map((s) => s.timesheetKey);
-					return {
-						success: false,
-						error: `Unanet rejected the timesheet update (${commitError.message}). This often means a duplicate project/day entry; use unanet_edit_timeslip to change the existing one.`,
-						committedTimesheetKeys: committed,
-					};
+					// Only a 400 implies a rejected row (e.g. a cell the guard missed).
+					// Auth/server/network errors must surface as themselves, not as
+					// misleading duplicate guidance.
+					if (commitError.status === 400) {
+						return {
+							success: false,
+							error: `Unanet rejected the timesheet update (${commitError.message}). This often means a duplicate project/day entry; use unanet_edit_timeslip to change the existing one.`,
+						};
+					}
+					throw commitError;
 				}
 			}
 
@@ -731,7 +747,9 @@ export const editTimeslipTool = {
 		description: z
 			.string()
 			.optional()
-			.describe("New comment for the row. Omit to leave the comment unchanged."),
+			.describe(
+				"New comment for the row. Omit to leave the comment unchanged.",
+			),
 		confirm: z
 			.literal(true)
 			.describe("Must be true to confirm this live timesheet edit."),
@@ -861,7 +879,8 @@ export const deleteTimeslipTool = {
 		if (args.timeslipKey === undefined && args.projectId === undefined) {
 			return {
 				success: false,
-				error: "Provide timeslipKey or projectId to identify the row to delete.",
+				error:
+					"Provide timeslipKey or projectId to identify the row to delete.",
 			};
 		}
 
@@ -943,10 +962,7 @@ export const submitTimesheetForApprovalTool = {
 			.describe(
 				"Any date within the timesheet period to submit. Defaults to today.",
 			),
-		comment: z
-			.string()
-			.optional()
-			.describe("Optional submission comment."),
+		comment: z.string().optional().describe("Optional submission comment."),
 		ignoreWarnings: z
 			.boolean()
 			.optional()

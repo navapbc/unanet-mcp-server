@@ -295,7 +295,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 					hours: 4,
 					description: "Edited comment",
 				},
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(true);
 			expect(result.before.hoursWorked).toBe(8);
@@ -313,7 +317,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 					timeslipKey: 301,
 					hours: 2,
 				},
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("is on 2026-01-01, not 2026-01-05");
@@ -336,10 +344,42 @@ describe("Unanet MCP Server Basic Tests", () => {
 						{ projectId: "102", date: "2026-01-02", hours: 1 },
 					],
 				},
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("not editable");
+			const { count } = await (
+				await fetch(`${MOCK_BASE_URL}/platform/rest/__test/put-count`)
+			).json();
+			expect(count).toBe(0);
+		});
+
+		it("should refuse a batch spanning multiple timesheets and write nothing", async () => {
+			const { updateTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			await fetch(`${MOCK_BASE_URL}/platform/rest/__test/reset-put-count`, {
+				method: "POST",
+			});
+			// 2026-01-01 -> timesheet 201, 2026-01-03 -> timesheet 203 (different
+			// periods). The batch must abort with no PUT.
+			const result = await updateTimesheetTool.handler(
+				{
+					confirm: true,
+					entries: [
+						{ projectId: "102", date: "2026-01-01", hours: 1 },
+						{ projectId: "102", date: "2026-01-03", hours: 1 },
+					],
+				},
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("multiple timesheets");
+			expect(result.timesheetKeys).toHaveLength(2);
 			const { count } = await (
 				await fetch(`${MOCK_BASE_URL}/platform/rest/__test/put-count`)
 			).json();
@@ -350,7 +390,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 			const { deleteTimeslipTool } = await import("../dist/tools/timesheet.js");
 			const result = await deleteTimeslipTool.handler(
 				{ confirm: true, date: "2026-01-01", timeslipKey: 301 },
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(true);
 			expect(result.cleared.key).toBe(301);
@@ -364,10 +408,19 @@ describe("Unanet MCP Server Basic Tests", () => {
 				{
 					confirm: true,
 					entries: [
-						{ projectId: "101", date: "2026-01-01", hours: 2, description: "dup cell" },
+						{
+							projectId: "101",
+							date: "2026-01-01",
+							hours: 2,
+							description: "dup cell",
+						},
 					],
 				},
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("only one entry per project/day");
@@ -380,7 +433,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 			);
 			const result = await submitTimesheetForApprovalTool.handler(
 				{ confirm: true, date: "2026-01-01", comment: "Done" },
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(true);
 			expect(result.timesheetKey).toBe(201);
@@ -392,7 +449,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 			);
 			const result = await submitTimesheetForApprovalTool.handler(
 				{ confirm: true, date: "2026-01-03" },
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(false);
 			expect(result.validationErrors.length).toBeGreaterThan(0);
@@ -402,7 +463,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 			const { submitTimesheetForApprovalTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
-			const auth = { username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL };
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
 			const held = await submitTimesheetForApprovalTool.handler(
 				{ confirm: true, date: "2026-01-04" },
 				auth,
@@ -441,7 +506,9 @@ describe("Unanet MCP Server Basic Tests", () => {
 				deleteTimeslipTool.inputSchema.parse({ timeslipKey: 301 }),
 			).toThrow();
 			expect(() =>
-				submitTimesheetForApprovalTool.inputSchema.parse({ date: "2026-01-01" }),
+				submitTimesheetForApprovalTool.inputSchema.parse({
+					date: "2026-01-01",
+				}),
 			).toThrow();
 			expect(() =>
 				createContactTool.inputSchema.parse({
