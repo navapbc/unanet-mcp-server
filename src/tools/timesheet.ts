@@ -144,8 +144,12 @@ function editableTimesheetStatus(status: unknown): boolean {
 }
 
 function dateWithinTimesheet(workDate: string, timesheet: any): boolean {
-	const beginDate = timesheet.beginDate ?? timesheet.periodStart;
-	const endDate = timesheet.endDate ?? timesheet.periodEnd;
+	const beginDate =
+		timesheet.beginDate ??
+		timesheet.periodStart ??
+		timesheet.timePeriod?.beginDate;
+	const endDate =
+		timesheet.endDate ?? timesheet.periodEnd ?? timesheet.timePeriod?.endDate;
 	return Boolean(
 		beginDate && endDate && beginDate <= workDate && workDate <= endDate,
 	);
@@ -402,7 +406,7 @@ export const submitTimesheetTool = {
 				if (!dateWithinTimesheet(workDate, fullTimesheet)) {
 					return {
 						success: false,
-						error: `${workDate} is outside the resolved timesheet period ${fullTimesheet.beginDate ?? "unknown"} to ${fullTimesheet.endDate ?? "unknown"}.`,
+						error: `${workDate} is outside the resolved timesheet period ${fullTimesheet.beginDate ?? fullTimesheet.timePeriod?.beginDate ?? "unknown"} to ${fullTimesheet.endDate ?? fullTimesheet.timePeriod?.endDate ?? "unknown"}.`,
 					};
 				}
 				if (!editableTimesheetStatus(fullTimesheet.status)) {
