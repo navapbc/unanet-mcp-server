@@ -237,6 +237,35 @@ function removeUndefined(
 	);
 }
 
+// Two timeslips occupy the same Unanet "cell" when they share project, task,
+// pay code, project type, and work date. Unanet rejects a second row for the
+// same cell, so adds must detect this and edit instead.
+function isSameCell(existingTimeslip: any, newTimeslip: any): boolean {
+	const sameKey = (
+		existingValue: unknown,
+		newValue: unknown,
+	): boolean => numericKey(existingValue) === numericKey(newValue);
+	return (
+		existingTimeslip.workDate === newTimeslip.workDate &&
+		sameKey(
+			existingTimeslip.project?.key ?? existingTimeslip.projectKey,
+			newTimeslip.projectKey,
+		) &&
+		sameKey(
+			existingTimeslip.task?.key ?? existingTimeslip.taskKey,
+			newTimeslip.taskKey,
+		) &&
+		sameKey(
+			existingTimeslip.payCode?.key ?? existingTimeslip.payCodeKey,
+			newTimeslip.payCodeKey,
+		) &&
+		sameKey(
+			existingTimeslip.projectType?.key ?? existingTimeslip.projectTypeKey,
+			newTimeslip.projectTypeKey,
+		)
+	);
+}
+
 function isDuplicate(existingTimeslip: any, newTimeslip: any): boolean {
 	return (
 		existingTimeslip.workDate === newTimeslip.workDate &&
@@ -361,6 +390,135 @@ function buildNewTimeslip(entry: any, project: any, fullTimesheet: any): any {
 	return newTimeslip;
 }
 
+// Shared write helpers ------------------------------------------------------
+
+// Load a timesheet that is safe to write to: it must exist, cover the work
+// date, and be in an editable status. Returns a discriminated result so each
+// tool can surface a precise error instead of throwing.
+async function loadWritableTimesheet(
+	client: any,
+	workDate: string,
+): Promise<
+	| {
+			ok: true;
+			fullTimesheet: any;
+			timesheetKey: number;
+			timeslips: any[];
+	  }
+	| { ok: false; error: string }
+> {
+	const timesheetRef = await findTimesheet(client, workDate);
+	const fullTimesheet = await getTimesheet(client, timesheetRef);
+	if (!dateWithinTimesheet(workDate, fullTimesheet)) {
+		return {
+			ok: false,
+			error: `${workDate} is outside the resolved timesheet period ${fullTimesheet.beginDate ?? fullTimesheet.timePeriod?.beginDate ?? "unknown"} to ${fullTimesheet.endDate ?? fullTimesheet.timePeriod?.endDate ?? "unknown"}.`,
+		};
+	}
+	if (!editableTimesheetStatus(fullTimesheet.status)) {
+		return {
+			ok: false,
+			error: `Timesheet ${fullTimesheet.key ?? timesheetRef.key ?? timesheetRef.id} is not editable because its status is ${fullTimesheet.status}.`,
+		};
+	}
+	return {
+		ok: true,
+		fullTimesheet,
+		timesheetKey: fullTimesheet.key ?? timesheetRef.key ?? timesheetRef.id,
+		timeslips: [...(fullTimesheet.timeslips ?? [])],
+	};
+}
+
+// Persist the full timeslip set with a single Platform REST PUT.
+async function commitTimeslips(
+	client: any,
+	timesheetKey: number,
+	timeslips: any[],
+	fullTimesheet: any,
+): Promise<void> {
+	await client.put(`/me/time/${timesheetKey}`, {
+		key: timesheetKey,
+		timeslips: timeslips.map(timeslipToUpdate),
+		lastDrawerState: fullTimesheet.lastDrawerState ?? "DURATION",
+	});
+}
+
+function timeslipProjectKey(timeslip: any): number | undefined {
+	return numericKey(timeslip.project?.key ?? timeslip.projectKey);
+}
+
+// Does an existing timeslip row match the caller's project selector?
+// Numeric selectors match the project key exactly; text selectors use the same
+// token-aware matching as project resolution so short terms like "AI" stay
+// precise.
+function timeslipMatchesProject(timeslip: any, projectId: string): boolean {
+	const needle = String(projectId).trim().toLowerCase();
+	if (!needle) {
+		return false;
+	}
+	const key = numericKey(needle);
+	if (key !== undefined) {
+		return timeslipProjectKey(timeslip) === key;
+	}
+	const haystack = String(
+		timeslip.project?.name ?? timeslip.project?.title ?? "",
+	).toLowerCase();
+	if (needle.length <= 3) {
+		return haystack
+			.split(/[^a-z0-9]+/)
+			.filter(Boolean)
+			.includes(needle);
+	}
+	return haystack.includes(needle);
+}
+
+// Find existing rows matching a selector (timeslip key, and/or project, and/or
+// task). Never guesses: when more than one row matches it returns the
+// candidates so the caller can disambiguate.
+function selectTimeslips(
+	timeslips: any[],
+	selector: {
+		timeslipKey?: number;
+		projectId?: string;
+		taskId?: number;
+		workDate?: string;
+	},
+): { matches: any[]; ambiguous?: boolean; candidates?: any[] } {
+	let matches = timeslips;
+	// When selecting by project/task (not an exact key), scope to the work date
+	// so we never match an identical project on a different day of the period.
+	if (selector.workDate !== undefined && selector.timeslipKey === undefined) {
+		matches = matches.filter(
+			(timeslip) => timeslip.workDate === selector.workDate,
+		);
+	}
+	if (selector.timeslipKey !== undefined) {
+		matches = matches.filter(
+			(timeslip) => numericKey(timeslip.key) === Number(selector.timeslipKey),
+		);
+	}
+	if (selector.projectId !== undefined) {
+		matches = matches.filter((timeslip) =>
+			timeslipMatchesProject(timeslip, selector.projectId as string),
+		);
+	}
+	if (selector.taskId !== undefined) {
+		matches = matches.filter(
+			(timeslip) =>
+				numericKey(timeslip.task?.key ?? timeslip.taskKey) ===
+				Number(selector.taskId),
+		);
+	}
+	if (matches.length > 1) {
+		return {
+			matches,
+			ambiguous: true,
+			candidates: matches.map(summarizeTimeslip),
+		};
+	}
+	return { matches };
+}
+
 // Submit timesheet tool
 export const updateTimesheetTool = {
 	name: "unanet_update_timesheet",
@@ -401,27 +559,15 @@ export const updateTimesheetTool = {
 
 			const addedEntries = [];
 			for (const [workDate, entries] of entriesByDate) {
-				const timesheetRef = await findTimesheet(client, workDate);
-				const fullTimesheet = await getTimesheet(client, timesheetRef);
-				if (!dateWithinTimesheet(workDate, fullTimesheet)) {
-					return {
-						success: false,
-						error: `${workDate} is outside the resolved timesheet period ${fullTimesheet.beginDate ?? fullTimesheet.timePeriod?.beginDate ?? "unknown"} to ${fullTimesheet.endDate ?? fullTimesheet.timePeriod?.endDate ?? "unknown"}.`,
-					};
+				const loaded = await loadWritableTimesheet(client, workDate);
+				if (!loaded.ok) {
+					return { success: false, error: loaded.error };
 				}
-				if (!editableTimesheetStatus(fullTimesheet.status)) {
-					return {
-						success: false,
-						error: `Timesheet ${fullTimesheet.key ?? timesheetRef.key ?? timesheetRef.id} is not editable because its status is ${fullTimesheet.status}.`,
-					};
-				}
-				const timesheetKey =
-					fullTimesheet.key ?? timesheetRef.key ?? timesheetRef.id;
+				const { fullTimesheet, timesheetKey, timeslips } = loaded;
 				const availableProjects = await getAvailableProjects(
 					client,
 					timesheetKey,
 				);
-				const timeslips = [...(fullTimesheet.timeslips ?? [])];
 
 				for (const entry of entries) {
 					const resolution = resolveProject(availableProjects, entry);
@@ -451,6 +597,21 @@ export const updateTimesheetTool = {
 							project: projectDisplay(project),
 						};
 					}
+					// Unanet stores one timeslip per project+date+task+payCode+type
+					// "cell"; adding a second for the same cell is rejected by the API.
+					// Detect it up front and point the caller at edit instead of
+					// surfacing an opaque 400.
+					const sameCell = timeslips.find((timeslip) =>
+						isSameCell(timeslip, newTimeslip),
+					);
+					if (sameCell) {
+						return {
+							success: false,
+							error: `A time entry already exists for ${projectDisplay(project)} on ${workDate} (${sameCell.hoursWorked ?? 0} hours). Unanet allows only one entry per project/day, so use unanet_edit_timeslip to change its hours or comment instead of adding another.`,
+							workDate,
+							existingRow: summarizeTimeslip(sameCell),
+						};
+					}
 
 					timeslips.push(newTimeslip);
 					addedEntries.push({
@@ -462,11 +623,12 @@ export const updateTimesheetTool = {
 					});
 				}
 
-				await client.put(`/me/time/${timesheetKey}`, {
-					key: timesheetKey,
-					timeslips: timeslips.map(timeslipToUpdate),
-					lastDrawerState: fullTimesheet.lastDrawerState ?? "DURATION",
-				});
+				await commitTimeslips(
+					client,
+					timesheetKey,
+					timeslips,
+					fullTimesheet,
+				);
 			}
 
 			return {
@@ -479,6 +641,314 @@ export const updateTimesheetTool = {
 				success: false,
 				error: error.message,
 			};
+		}
+	},
+};
+
+// Edit timeslip tool
+export const editTimeslipTool = {
+	name: "unanet_edit_timeslip",
+	description:
+		"Edit an existing timeslip row in place on your in-progress Unanet timesheet (change hours and/or comment). Identify the row by timeslipKey, or by projectId (key/code/name) plus date. If more than one row matches, the tool returns the candidates and makes no change instead of guessing. Requires confirm: true.",
+	inputSchema: z.object({
+		date: z
+			.string()
+			.optional()
+			.describe("Work date in YYYY-MM-DD format. Defaults to today."),
+		timeslipKey: z
+			.number()
+			.int()
+			.optional()
+			.describe("Exact existing timeslip row key (most precise selector)."),
+		projectId: z
+			.string()
+			.optional()
+			.describe("Project key, code, or name to match the row to edit."),
+		taskId: z
+			.number()
+			.int()
+			.optional()
+			.describe("Optional task key to disambiguate rows on the same project."),
+		hours: z
+			.number()
+			.min(0)
+			.max(24)
+			.optional()
+			.describe("New hours for the row. Omit to leave hours unchanged."),
+		description: z
+			.string()
+			.optional()
+			.describe("New comment for the row. Omit to leave the comment unchanged."),
+		confirm: z
+			.literal(true)
+			.describe("Must be true to confirm this live timesheet edit."),
+	}),
+	handler: async (args: any, auth: UnanetAuth) => {
+		if (args.confirm !== true) {
+			return {
+				success: false,
+				error: "confirm=true is required before editing a timeslip.",
+			};
+		}
+		if (args.timeslipKey === undefined && args.projectId === undefined) {
+			return {
+				success: false,
+				error: "Provide timeslipKey or projectId to identify the row to edit.",
+			};
+		}
+		if (args.hours === undefined && args.description === undefined) {
+			return {
+				success: false,
+				error: "Provide hours and/or description to change. Nothing to edit.",
+			};
+		}
+
+		const client = createUnanetClient(auth);
+		const workDate = args.date ?? formatDate();
+
+		try {
+			const loaded = await loadWritableTimesheet(client, workDate);
+			if (!loaded.ok) {
+				return { success: false, error: loaded.error };
+			}
+			const { fullTimesheet, timesheetKey, timeslips } = loaded;
+
+			const selection = selectTimeslips(timeslips, {
+				timeslipKey: args.timeslipKey,
+				projectId: args.projectId,
+				taskId: args.taskId,
+				workDate,
+			});
+			if (selection.ambiguous) {
+				return {
+					success: false,
+					error:
+						"Multiple timeslip rows match. Re-run with timeslipKey to pick exactly one.",
+					candidates: selection.candidates,
+				};
+			}
+			const target = selection.matches[0];
+			if (!target) {
+				return {
+					success: false,
+					error: `No timeslip row on ${workDate} matched the given selector.`,
+					availableRows: timeslips
+						.filter((row) => row.workDate === workDate)
+						.map(summarizeTimeslip),
+				};
+			}
+
+			const before = summarizeTimeslip(target);
+			if (args.hours !== undefined) {
+				target.hoursWorked = args.hours;
+			}
+			if (args.description !== undefined) {
+				target.comments = args.description;
+			}
+
+			await commitTimeslips(client, timesheetKey, timeslips, fullTimesheet);
+
+			return {
+				success: true,
+				message: "Updated 1 timeslip row in Unanet.",
+				workDate,
+				before,
+				after: summarizeTimeslip(target),
+			};
+		} catch (error: any) {
+			return { success: false, error: error.message };
+		}
+	},
+};
+
+// Delete timeslip tool
+export const deleteTimeslipTool = {
+	name: "unanet_delete_timeslip",
+	description:
+		"Clear an existing time entry on your in-progress Unanet timesheet by setting it to 0 hours and removing its comment. Unanet has no true row delete, so the project may still appear on the timesheet with no hours. Identify the entry by timeslipKey, or by projectId (key/code/name) plus date. If more than one row matches, the tool returns the candidates and changes nothing instead of guessing. Requires confirm: true.",
+	inputSchema: z.object({
+		date: z
+			.string()
+			.optional()
+			.describe("Work date in YYYY-MM-DD format. Defaults to today."),
+		timeslipKey: z
+			.number()
+			.int()
+			.optional()
+			.describe("Exact existing timeslip row key (most precise selector)."),
+		projectId: z
+			.string()
+			.optional()
+			.describe("Project key, code, or name to match the row to delete."),
+		taskId: z
+			.number()
+			.int()
+			.optional()
+			.describe("Optional task key to disambiguate rows on the same project."),
+		confirm: z
+			.literal(true)
+			.describe("Must be true to confirm this live timesheet deletion."),
+	}),
+	handler: async (args: any, auth: UnanetAuth) => {
+		if (args.confirm !== true) {
+			return {
+				success: false,
+				error: "confirm=true is required before deleting a timeslip.",
+			};
+		}
+		if (args.timeslipKey === undefined && args.projectId === undefined) {
+			return {
+				success: false,
+				error: "Provide timeslipKey or projectId to identify the row to delete.",
+			};
+		}
+
+		const client = createUnanetClient(auth);
+		const workDate = args.date ?? formatDate();
+
+		try {
+			const loaded = await loadWritableTimesheet(client, workDate);
+			if (!loaded.ok) {
+				return { success: false, error: loaded.error };
+			}
+			const { fullTimesheet, timesheetKey, timeslips } = loaded;
+
+			const selection = selectTimeslips(timeslips, {
+				timeslipKey: args.timeslipKey,
+				projectId: args.projectId,
+				taskId: args.taskId,
+				workDate,
+			});
+			if (selection.ambiguous) {
+				return {
+					success: false,
+					error:
+						"Multiple timeslip rows match. Re-run with timeslipKey to pick exactly one.",
+					candidates: selection.candidates,
+				};
+			}
+			const target = selection.matches[0];
+			if (!target) {
+				return {
+					success: false,
+					error: `No timeslip row on ${workDate} matched the given selector.`,
+					availableRows: timeslips
+						.filter((row) => row.workDate === workDate)
+						.map(summarizeTimeslip),
+				};
+			}
+
+			const cleared = summarizeTimeslip(target);
+			// Unanet has no per-timeslip delete: clear the cell to zero hours and
+			// drop the comment, then save the full set. The project row may remain
+			// on the timesheet at 0 hours (Unanet keeps assigned projects).
+			target.hoursWorked = 0;
+			target.comments = "";
+			await commitTimeslips(client, timesheetKey, timeslips, fullTimesheet);
+
+			return {
+				success: true,
+				message:
+					"Cleared 1 time entry (set to 0 hours). The project may still appear on the timesheet with no hours.",
+				workDate,
+				cleared,
+			};
+		} catch (error: any) {
+			return { success: false, error: error.message };
+		}
+	},
+};
+
+// Submit timesheet for approval tool
+export const submitTimesheetForApprovalTool = {
+	name: "unanet_submit_timesheet_for_approval",
+	description:
+		"Submit your Unanet timesheet for approval (POST /me/time/{id}/submit). The tool validates the timesheet first: it refuses on validation errors, and on warnings it returns them and does nothing unless ignoreWarnings is true. This is a one-way action that locks the timesheet from further edits, so it requires confirm: true.",
+	inputSchema: z.object({
+		date: z
+			.string()
+			.optional()
+			.describe(
+				"Any date within the timesheet period to submit. Defaults to today.",
+			),
+		comment: z
+			.string()
+			.optional()
+			.describe("Optional submission comment."),
+		ignoreWarnings: z
+			.boolean()
+			.optional()
+			.default(false)
+			.describe("Submit even if validation returns non-blocking warnings."),
+		confirm: z
+			.literal(true)
+			.describe("Must be true to confirm this one-way submission."),
+	}),
+	handler: async (args: any, auth: UnanetAuth) => {
+		if (args.confirm !== true) {
+			return {
+				success: false,
+				error: "confirm=true is required before submitting a timesheet.",
+			};
+		}
+
+		const client = createUnanetClient(auth);
+		const workDate = args.date ?? formatDate();
+
+		try {
+			const timesheetRef = await findTimesheet(client, workDate);
+			const timesheetKey = timesheetRef.key ?? timesheetRef.id;
+			if (!editableTimesheetStatus(timesheetRef.status)) {
+				return {
+					success: false,
+					error: `Timesheet ${timesheetKey} cannot be submitted because its status is ${timesheetRef.status}.`,
+				};
+			}
+
+			const validation = (await client.get(`/me/time/${timesheetKey}/validate`))
+				.data;
+			// Field names verified against live Platform REST /validate response.
+			const errors = [
+				...(validation.errors ?? []),
+				...(validation.timeslipErrors ?? []),
+				...(validation.itemEntryErrors ?? []),
+				...(validation.timesheetTITOMissingStops ?? []),
+				...(validation.timesheetTITOOverlaps ?? []),
+				...(validation.timeslipTITOMissingStops ?? []),
+				...(validation.timeslipTITOOverlaps ?? []),
+				...(validation.titoHourMismatches ?? []),
+			];
+			if (errors.length > 0) {
+				return {
+					success: false,
+					error:
+						"Timesheet has validation errors and was not submitted. Fix these and retry.",
+					validationErrors: errors,
+				};
+			}
+			const warnings = validation.warnings ?? [];
+			if (warnings.length > 0 && !args.ignoreWarnings) {
+				return {
+					success: false,
+					error:
+						"Timesheet has validation warnings. Review them, then re-run with ignoreWarnings=true to submit anyway.",
+					validationWarnings: warnings,
+				};
+			}
+
+			await client.post(`/me/time/${timesheetKey}/submit`, {
+				comment: args.comment,
+				ignoreWarnings: args.ignoreWarnings,
+			});
+
+			return {
+				success: true,
+				message: `Submitted timesheet ${timesheetKey} for approval.`,
+				timesheetKey,
+				submittedWarnings: warnings.length > 0 ? warnings : undefined,
+			};
+		} catch (error: any) {
+			return { success: false, error: error.message };
 		}
 	},
 };
@@ -589,7 +1059,7 @@ export const getTimesheetsTool = {
 				beginDateStart: shiftIsoDate(args.startDate, -31),
 				beginDateEnd: args.endDate,
 			};
-			if (args.status !== "All") {
+			if (args.status && args.status !== "All") {
 				criteria.statuses = [statusMap[args.status] ?? args.status];
 			}
 
@@ -614,7 +1084,11 @@ export const getTimesheetsTool = {
 				count: detailedTimesheets.length,
 				timesheets: detailedTimesheets.map((ts) => {
 					const period = timesheetPeriod(ts);
-					const timeslips = ts.timeslips ?? [];
+					// Hide empty (0-hour) cells: Unanet leaves a project row behind
+					// when an entry is cleared, and those are not real time entries.
+					const timeslips = (ts.timeslips ?? []).filter(
+						(timeslip: any) => Number(timeslip.hoursWorked) > 0,
+					);
 					return {
 						id: ts.id ?? ts.key,
 						period: `${period.startDate} to ${period.endDate}`,

@@ -125,15 +125,22 @@ app.get("/platform/rest/projects/:id", (req, res) => {
 	});
 });
 
+const SEARCH_KEY_BY_DATE: Record<string, number> = {
+	"2026-01-02": 202,
+	"2026-01-03": 203,
+	"2026-01-04": 204,
+};
+
 app.post("/platform/rest/me/time/search", (req, res) => {
 	const workDate = req.body?.workDate;
+	const key = SEARCH_KEY_BY_DATE[workDate] ?? 201;
 	res.json({
 		items: [
 			{
-				key: workDate === "2026-01-02" ? 202 : 201,
+				key,
 				beginDate: "2026-01-01",
 				endDate: "2026-01-15",
-				status: workDate === "2026-01-02" ? "SUBMITTED" : "INUSE",
+				status: key === 202 ? "SUBMITTED" : "INUSE",
 				hours: 8,
 			},
 		],
@@ -188,6 +195,24 @@ app.put("/platform/rest/me/time/:id", (req, res) => {
 	res.json({
 		key: Number(req.params.id),
 		updatedTimeslips: req.body?.timeslips?.length ?? 0,
+	});
+});
+
+app.get("/platform/rest/me/time/:id/validate", (req, res) => {
+	const key = Number(req.params.id);
+	res.json({
+		errors: key === 203 ? ["Missing required pay code"] : [],
+		warnings: key === 204 ? ["Hours below expected for period"] : [],
+		timeslipErrors: [],
+		itemEntryErrors: [],
+	});
+});
+
+app.post("/platform/rest/me/time/:id/submit", (req, res) => {
+	res.json({
+		key: Number(req.params.id),
+		status: "SUBMITTED",
+		comment: req.body?.comment ?? null,
 	});
 });
 

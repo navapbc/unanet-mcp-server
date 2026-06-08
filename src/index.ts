@@ -27,6 +27,9 @@ import {
 } from "./tools/projects.js";
 import {
 	updateTimesheetTool,
+	editTimeslipTool,
+	deleteTimeslipTool,
+	submitTimesheetForApprovalTool,
 	getTimesheetsTool,
 	getMyTimesheetProjectsTool,
 	submitExpenseTool,
@@ -129,6 +132,9 @@ const legacyReadTools = [
 const mutatingTools = [
 	updateProjectBudgetTool,
 	updateTimesheetTool,
+	editTimeslipTool,
+	deleteTimeslipTool,
+	submitTimesheetForApprovalTool,
 	submitExpenseTool,
 	approveTimesheetTool,
 	createContactTool,

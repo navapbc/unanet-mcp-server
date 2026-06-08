@@ -204,7 +204,10 @@ UNANET_ENABLE_WRITE_TOOLS=true
 
 | Tool | Current behavior |
 | --- | --- |
-| `unanet_update_timesheet` | Live write; appends timeslip rows to your in-progress timesheet (does not submit for approval, does not overwrite existing rows) and requires `confirm: true`. |
+| `unanet_update_timesheet` | Live write; adds a time entry (one row per project/day) to your in-progress timesheet. Does not submit for approval, does not overwrite existing rows, and rejects a second entry for a project/day that already has one (use edit). Requires `confirm: true`. |
+| `unanet_edit_timeslip` | Live write; changes the hours and/or comment of an existing entry in place. Identify by `timeslipKey`, or `projectId` + `date`; ambiguous matches return candidates instead of guessing. Requires `confirm: true`. |
+| `unanet_delete_timeslip` | Live write; clears an entry (sets it to 0 hours and removes the comment). Unanet has no true row delete, so the project may still appear on the sheet with no hours. Requires `confirm: true`. |
+| `unanet_submit_timesheet_for_approval` | Live write; validates the timesheet, then submits it for approval. Refuses on errors; holds on warnings unless `ignoreWarnings: true`. One-way action — requires `confirm: true`. |
 | `unanet_submit_expense` | Disabled/fail-closed until expense allocation keys are modeled. |
 | `unanet_update_project_budget` | Disabled/fail-closed; Platform REST requires a full project update payload. |
 | `unanet_update_lead` | Disabled/fail-closed; no Platform REST lead endpoint identified. |

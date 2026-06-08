@@ -285,10 +285,102 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(result.error).toContain("not editable");
 		});
 
-		it("should require confirmation for live write tools", async () => {
-			const { approveTimesheetTool, updateTimesheetTool } = await import(
+		it("should edit an existing timeslip in place", async () => {
+			const { editTimeslipTool } = await import("../dist/tools/timesheet.js");
+			const result = await editTimeslipTool.handler(
+				{
+					confirm: true,
+					date: "2026-01-01",
+					timeslipKey: 301,
+					hours: 4,
+					description: "Edited comment",
+				},
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(true);
+			expect(result.before.hoursWorked).toBe(8);
+			expect(result.after.hoursWorked).toBe(4);
+			expect(result.after.comments).toBe("Edited comment");
+		});
+
+		it("should clear (delete) an existing timeslip", async () => {
+			const { deleteTimeslipTool } = await import("../dist/tools/timesheet.js");
+			const result = await deleteTimeslipTool.handler(
+				{ confirm: true, date: "2026-01-01", timeslipKey: 301 },
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(true);
+			expect(result.cleared.key).toBe(301);
+		});
+
+		it("should reject adding a second entry for the same project/day", async () => {
+			const { updateTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
+			const result = await updateTimesheetTool.handler(
+				{
+					confirm: true,
+					entries: [
+						{ projectId: "101", date: "2026-01-01", hours: 2, description: "dup cell" },
+					],
+				},
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("only one entry per project/day");
+			expect(result.existingRow.key).toBe(301);
+		});
+
+		it("should submit a clean timesheet for approval", async () => {
+			const { submitTimesheetForApprovalTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const result = await submitTimesheetForApprovalTool.handler(
+				{ confirm: true, date: "2026-01-01", comment: "Done" },
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(true);
+			expect(result.timesheetKey).toBe(201);
+		});
+
+		it("should refuse to submit a timesheet with validation errors", async () => {
+			const { submitTimesheetForApprovalTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const result = await submitTimesheetForApprovalTool.handler(
+				{ confirm: true, date: "2026-01-03" },
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(false);
+			expect(result.validationErrors.length).toBeGreaterThan(0);
+		});
+
+		it("should hold submission on warnings unless ignoreWarnings is set", async () => {
+			const { submitTimesheetForApprovalTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const auth = { username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL };
+			const held = await submitTimesheetForApprovalTool.handler(
+				{ confirm: true, date: "2026-01-04" },
+				auth,
+			);
+			expect(held.success).toBe(false);
+			expect(held.validationWarnings.length).toBeGreaterThan(0);
+			const forced = await submitTimesheetForApprovalTool.handler(
+				{ confirm: true, date: "2026-01-04", ignoreWarnings: true },
+				auth,
+			);
+			expect(forced.success).toBe(true);
+		});
+
+		it("should require confirmation for live write tools", async () => {
+			const {
+				approveTimesheetTool,
+				updateTimesheetTool,
+				editTimeslipTool,
+				deleteTimeslipTool,
+				submitTimesheetForApprovalTool,
+			} = await import("../dist/tools/timesheet.js");
 			const { createContactTool } = await import("../dist/tools/contacts.js");
 
 			expect(() =>
@@ -298,6 +390,15 @@ describe("Unanet MCP Server Basic Tests", () => {
 			).toThrow();
 			expect(() =>
 				approveTimesheetTool.inputSchema.parse({ timesheetId: "201" }),
+			).toThrow();
+			expect(() =>
+				editTimeslipTool.inputSchema.parse({ timeslipKey: 301, hours: 1 }),
+			).toThrow();
+			expect(() =>
+				deleteTimeslipTool.inputSchema.parse({ timeslipKey: 301 }),
+			).toThrow();
+			expect(() =>
+				submitTimesheetForApprovalTool.inputSchema.parse({ date: "2026-01-01" }),
 			).toThrow();
 			expect(() =>
 				createContactTool.inputSchema.parse({
