@@ -303,6 +303,49 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(result.after.comments).toBe("Edited comment");
 		});
 
+		it("should reject edit when explicit date conflicts with the row's date", async () => {
+			const { editTimeslipTool } = await import("../dist/tools/timesheet.js");
+			// Row 301 is on 2026-01-01; asking to edit it under 2026-01-05 must fail.
+			const result = await editTimeslipTool.handler(
+				{
+					confirm: true,
+					date: "2026-01-05",
+					timeslipKey: 301,
+					hours: 2,
+				},
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("is on 2026-01-01, not 2026-01-05");
+		});
+
+		it("should not commit any timesheet when a later batch entry is invalid", async () => {
+			const { updateTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			await fetch(`${MOCK_BASE_URL}/platform/rest/__test/reset-put-count`, {
+				method: "POST",
+			});
+			// Entry 1 (2026-01-01) is valid; entry 2 (2026-01-02) is a SUBMITTED,
+			// non-editable sheet. The whole batch must abort before any PUT.
+			const result = await updateTimesheetTool.handler(
+				{
+					confirm: true,
+					entries: [
+						{ projectId: "102", date: "2026-01-01", hours: 1 },
+						{ projectId: "102", date: "2026-01-02", hours: 1 },
+					],
+				},
+				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+			);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("not editable");
+			const { count } = await (
+				await fetch(`${MOCK_BASE_URL}/platform/rest/__test/put-count`)
+			).json();
+			expect(count).toBe(0);
+		});
+
 		it("should clear (delete) an existing timeslip", async () => {
 			const { deleteTimeslipTool } = await import("../dist/tools/timesheet.js");
 			const result = await deleteTimeslipTool.handler(

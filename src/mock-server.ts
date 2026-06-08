@@ -14,6 +14,10 @@ const MOCK_PLATFORM_TOKEN = "mock-platform-token";
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 3000);
 
+// Test-only counter so tests can assert how many timesheet PUTs happened
+// (used to verify multi-entry add is all-or-nothing).
+let timesheetPutCount = 0;
+
 app.post("/platform/rest/login", (req, res) => {
 	const { username, password } = req.body || {};
 
@@ -63,7 +67,11 @@ app.post("/platform/rest/me/leave", (req, res) => {
 });
 
 // Mock bearer-token validation for the sample Platform REST endpoints below.
+// Test-only inspection routes bypass auth so tests can read counters.
 app.use((req, res, next) => {
+	if (req.path.startsWith("/platform/rest/__test/")) {
+		return next();
+	}
 	if (req.headers.authorization !== `Bearer ${MOCK_PLATFORM_TOKEN}`) {
 		return res.status(401).json({ error: "Invalid bearer token" });
 	}
@@ -192,10 +200,21 @@ app.get("/platform/rest/time/:id/projects", (_req, res) => {
 });
 
 app.put("/platform/rest/me/time/:id", (req, res) => {
+	timesheetPutCount += 1;
 	res.json({
 		key: Number(req.params.id),
 		updatedTimeslips: req.body?.timeslips?.length ?? 0,
+		timeslips: req.body?.timeslips ?? [],
 	});
+});
+
+app.get("/platform/rest/__test/put-count", (_req, res) => {
+	res.json({ count: timesheetPutCount });
+});
+
+app.post("/platform/rest/__test/reset-put-count", (_req, res) => {
+	timesheetPutCount = 0;
+	res.json({ count: timesheetPutCount });
 });
 
 app.get("/platform/rest/me/time/:id/validate", (req, res) => {

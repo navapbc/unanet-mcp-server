@@ -59,8 +59,14 @@ const timeEntrySchema = z
 		}
 	});
 
+// Use the LOCAL calendar date, not UTC. "Today" for a user in US/Eastern in
+// the evening must not roll over to tomorrow's UTC date and target the wrong
+// timesheet day.
 function formatDate(date = new Date()): string {
-	return date.toISOString().split("T")[0];
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
 }
 
 function numericKey(value: unknown): number | undefined {
@@ -548,87 +554,134 @@ export const updateTimesheetTool = {
 		const client = createUnanetClient(auth);
 
 		try {
-			const entriesByDate = new Map<string, any[]>();
-			for (const entry of args.entries) {
-				const date = entry.date ?? formatDate();
-				entriesByDate.set(date, [
-					...(entriesByDate.get(date) ?? []),
-					{ ...entry, date },
-				]);
+			// Phase 1 (preflight): load each affected timesheet once, resolve and
+			// build every new row, and validate dates/projects/duplicates/cells
+			// WITHOUT writing. Entries on different days of the same period share
+			// one working set so we never double-load or clobber a sibling day.
+			// Any failure here returns before a single PUT, keeping the batch
+			// all-or-nothing.
+			const sheets = new Map<
+				number,
+				{
+					fullTimesheet: any;
+					timesheetKey: number;
+					timeslips: any[];
+					availableProjects: any[];
+					dirty: boolean;
+				}
+			>();
+			const addedEntries = [];
+
+			for (const rawEntry of args.entries) {
+				const workDate = rawEntry.date ?? formatDate();
+				const entry = { ...rawEntry, date: workDate };
+
+				const timesheetRef = await findTimesheet(client, workDate);
+				const timesheetKey = timesheetRef.key ?? timesheetRef.id;
+				let sheet = sheets.get(timesheetKey);
+				if (!sheet) {
+					const loaded = await loadWritableTimesheet(client, workDate);
+					if (!loaded.ok) {
+						return { success: false, error: loaded.error };
+					}
+					sheet = {
+						fullTimesheet: loaded.fullTimesheet,
+						timesheetKey: loaded.timesheetKey,
+						timeslips: loaded.timeslips,
+						availableProjects: await getAvailableProjects(
+							client,
+							loaded.timesheetKey,
+						),
+						dirty: false,
+					};
+					sheets.set(loaded.timesheetKey, sheet);
+				} else if (!dateWithinTimesheet(workDate, sheet.fullTimesheet)) {
+					return {
+						success: false,
+						error: `${workDate} is outside the resolved timesheet period.`,
+					};
+				}
+
+				const resolution = resolveProject(sheet.availableProjects, entry);
+				if (!resolution.project) {
+					return {
+						success: false,
+						error: resolution.error,
+						availableProjectCount: sheet.availableProjects.length,
+						candidates: resolution.candidates,
+					};
+				}
+				const project = resolution.project;
+
+				const newTimeslip = buildNewTimeslip(entry, project, {
+					...sheet.fullTimesheet,
+					timeslips: sheet.timeslips,
+				});
+				if (
+					!args.allowDuplicate &&
+					sheet.timeslips.some((timeslip) =>
+						isDuplicate(timeslip, newTimeslip),
+					)
+				) {
+					return {
+						success: false,
+						error:
+							"An exact matching time entry already exists. Set allowDuplicate=true if this is intentional.",
+						workDate,
+						project: projectDisplay(project),
+					};
+				}
+				// Unanet stores one timeslip per project+date+task+payCode+type
+				// "cell"; adding a second for the same cell is rejected by the API.
+				// Detect it up front and point the caller at edit instead of
+				// surfacing an opaque 400.
+				const sameCell = sheet.timeslips.find((timeslip) =>
+					isSameCell(timeslip, newTimeslip),
+				);
+				if (sameCell) {
+					return {
+						success: false,
+						error: `A time entry already exists for ${projectDisplay(project)} on ${workDate} (${sameCell.hoursWorked ?? 0} hours). Unanet allows only one entry per project/day, so use unanet_edit_timeslip to change its hours or comment instead of adding another.`,
+						workDate,
+						existingRow: summarizeTimeslip(sameCell),
+					};
+				}
+
+				sheet.timeslips.push(newTimeslip);
+				sheet.dirty = true;
+				addedEntries.push({
+					workDate,
+					hours: newTimeslip.hoursWorked,
+					projectKey: newTimeslip.projectKey,
+					project: projectDisplay(project),
+					comments: newTimeslip.comments ?? null,
+				});
 			}
 
-			const addedEntries = [];
-			for (const [workDate, entries] of entriesByDate) {
-				const loaded = await loadWritableTimesheet(client, workDate);
-				if (!loaded.ok) {
-					return { success: false, error: loaded.error };
-				}
-				const { fullTimesheet, timesheetKey, timeslips } = loaded;
-				const availableProjects = await getAvailableProjects(
-					client,
-					timesheetKey,
-				);
-
-				for (const entry of entries) {
-					const resolution = resolveProject(availableProjects, entry);
-					if (!resolution.project) {
-						return {
-							success: false,
-							error: resolution.error,
-							availableProjectCount: availableProjects.length,
-							candidates: resolution.candidates,
-						};
-					}
-					const project = resolution.project;
-
-					const newTimeslip = buildNewTimeslip(entry, project, {
-						...fullTimesheet,
-						timeslips,
-					});
-					if (
-						!args.allowDuplicate &&
-						timeslips.some((timeslip) => isDuplicate(timeslip, newTimeslip))
-					) {
-						return {
-							success: false,
-							error:
-								"An exact matching time entry already exists. Set allowDuplicate=true if this is intentional.",
-							workDate,
-							project: projectDisplay(project),
-						};
-					}
-					// Unanet stores one timeslip per project+date+task+payCode+type
-					// "cell"; adding a second for the same cell is rejected by the API.
-					// Detect it up front and point the caller at edit instead of
-					// surfacing an opaque 400.
-					const sameCell = timeslips.find((timeslip) =>
-						isSameCell(timeslip, newTimeslip),
+			// Phase 2 (commit): one PUT per affected timesheet.
+			const dirtySheets = [...sheets.values()].filter((sheet) => sheet.dirty);
+			for (let index = 0; index < dirtySheets.length; index++) {
+				const sheet = dirtySheets[index];
+				try {
+					await commitTimeslips(
+						client,
+						sheet.timesheetKey,
+						sheet.timeslips,
+						sheet.fullTimesheet,
 					);
-					if (sameCell) {
-						return {
-							success: false,
-							error: `A time entry already exists for ${projectDisplay(project)} on ${workDate} (${sameCell.hoursWorked ?? 0} hours). Unanet allows only one entry per project/day, so use unanet_edit_timeslip to change its hours or comment instead of adding another.`,
-							workDate,
-							existingRow: summarizeTimeslip(sameCell),
-						};
-					}
-
-					timeslips.push(newTimeslip);
-					addedEntries.push({
-						workDate,
-						hours: newTimeslip.hoursWorked,
-						projectKey: newTimeslip.projectKey,
-						project: projectDisplay(project),
-						comments: newTimeslip.comments ?? null,
-					});
+				} catch (commitError: any) {
+					// A 400 here usually means Unanet rejected a row the cell guard
+					// did not catch. Translate it instead of leaking a bare 400, and
+					// disclose any timesheets already committed in this batch.
+					const committed = dirtySheets
+						.slice(0, index)
+						.map((s) => s.timesheetKey);
+					return {
+						success: false,
+						error: `Unanet rejected the timesheet update (${commitError.message}). This often means a duplicate project/day entry; use unanet_edit_timeslip to change the existing one.`,
+						committedTimesheetKeys: committed,
+					};
 				}
-
-				await commitTimeslips(
-					client,
-					timesheetKey,
-					timeslips,
-					fullTimesheet,
-				);
 			}
 
 			return {
@@ -737,6 +790,15 @@ export const editTimeslipTool = {
 						.map(summarizeTimeslip),
 				};
 			}
+			// A timeslipKey is matched across the whole period; if the caller also
+			// passed an explicit date, refuse when the row is actually on another
+			// day rather than editing it under a mislabeled date.
+			if (args.date !== undefined && target.workDate !== workDate) {
+				return {
+					success: false,
+					error: `Timeslip ${target.key} is on ${target.workDate}, not ${workDate}. Re-run with the correct date or omit it.`,
+				};
+			}
 
 			const before = summarizeTimeslip(target);
 			if (args.hours !== undefined) {
@@ -751,7 +813,7 @@ export const editTimeslipTool = {
 			return {
 				success: true,
 				message: "Updated 1 timeslip row in Unanet.",
-				workDate,
+				workDate: target.workDate,
 				before,
 				after: summarizeTimeslip(target),
 			};
@@ -838,6 +900,16 @@ export const deleteTimeslipTool = {
 				};
 			}
 
+			// A timeslipKey is matched across the whole period; if the caller also
+			// passed an explicit date, refuse when the row is actually on another
+			// day rather than clearing it under a mislabeled date.
+			if (args.date !== undefined && target.workDate !== workDate) {
+				return {
+					success: false,
+					error: `Timeslip ${target.key} is on ${target.workDate}, not ${workDate}. Re-run with the correct date or omit it.`,
+				};
+			}
+
 			const cleared = summarizeTimeslip(target);
 			// Unanet has no per-timeslip delete: clear the cell to zero hours and
 			// drop the comment, then save the full set. The project row may remain
@@ -850,7 +922,7 @@ export const deleteTimeslipTool = {
 				success: true,
 				message:
 					"Cleared 1 time entry (set to 0 hours). The project may still appear on the timesheet with no hours.",
-				workDate,
+				workDate: target.workDate,
 				cleared,
 			};
 		} catch (error: any) {
@@ -905,6 +977,11 @@ export const submitTimesheetForApprovalTool = {
 				};
 			}
 
+			// NOTE: validate-then-submit is not transactional. If another session
+			// edits the sheet between these two calls, the submit still goes
+			// through. Unanet revalidates server-side on submit, so a dirty sheet
+			// should still be rejected there; this client check is a fast-fail and
+			// a clear error surface, not a lock.
 			const validation = (await client.get(`/me/time/${timesheetKey}/validate`))
 				.data;
 			// Field names verified against live Platform REST /validate response.
