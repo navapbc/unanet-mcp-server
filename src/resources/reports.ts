@@ -33,7 +33,8 @@ export const projectListResource = {
 					status: project.status?.name ?? project.status,
 					projectOrg: project.projectOrg?.name,
 					owningOrg: project.owningOrg?.name,
-					projectManager: project.projectManager?.name ?? project.projectManager,
+					projectManager:
+						project.projectManager?.name ?? project.projectManager,
 				})),
 				count: projects.length,
 				lastUpdated: new Date().toISOString(),

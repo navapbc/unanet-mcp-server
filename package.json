@@ -12,6 +12,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
+    "setup:mac": "bash setup-mac.sh",
     "prepublishOnly": "npm run build",
     "test": "npm run build && vitest run",
     "test:watch": "vitest",

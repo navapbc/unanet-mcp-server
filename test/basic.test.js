@@ -203,7 +203,9 @@ describe("Unanet MCP Server Basic Tests", () => {
 		});
 
 		it("should fail closed for incomplete timesheet write tool", async () => {
-			const { submitTimesheetTool } = await import("../dist/tools/timesheet.js");
+			const { submitTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
 			const result = await submitTimesheetTool.handler(
 				{
 					entries: [
@@ -226,7 +228,9 @@ describe("Unanet MCP Server Basic Tests", () => {
 		});
 
 		it("should require confirmation for live write tools", async () => {
-			const { approveTimesheetTool } = await import("../dist/tools/timesheet.js");
+			const { approveTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
 			const { createContactTool } = await import("../dist/tools/contacts.js");
 
 			expect(() =>

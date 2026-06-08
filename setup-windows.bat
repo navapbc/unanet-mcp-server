@@ -5,187 +5,99 @@ echo ============================================
 echo   Unanet MCP Server Setup for Windows
 echo ============================================
 echo.
-
-REM Check if running as administrator
-net session >nul 2>&1
-if %errorLevel% == 0 (
-    echo [OK] Running with administrator privileges
-) else (
-    echo [WARNING] Not running as administrator. Some features may not work.
-    echo Please right-click this file and select "Run as administrator"
-    pause
-)
-
-echo.
-echo Checking prerequisites...
+echo This setup installs dependencies, builds the MCP server,
+echo creates a local .env file if needed, and configures Claude Desktop.
 echo.
 
-REM Check for Node.js
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [ERROR] Node.js is not installed!
+    echo [ERROR] Node.js is not installed.
     echo.
-    echo Please install Node.js first:
-    echo 1. Visit https://nodejs.org/
-    echo 2. Download the LTS version for Windows
-    echo 3. Run the installer
-    echo 4. Restart this setup after installation
+    echo Install Node.js 20 LTS or newer from https://nodejs.org/
+    echo Then run this setup again.
     echo.
     pause
     exit /b 1
-) else (
-    for /f "tokens=*" %%i in ('node --version') do set NODE_VERSION=%%i
-    echo [OK] Node.js found: !NODE_VERSION!
 )
 
-REM Check for npm
+for /f "tokens=*" %%i in ('node --version') do set NODE_VERSION=%%i
+for /f "tokens=*" %%i in ('node -p "process.versions.node.split('.')[0]"') do set NODE_MAJOR=%%i
+if !NODE_MAJOR! LSS 20 (
+    echo [ERROR] Found Node.js !NODE_VERSION!, but this project requires Node.js 20 or newer.
+    echo Install the current LTS from https://nodejs.org/ and run this setup again.
+    pause
+    exit /b 1
+)
+echo [OK] Node.js found: !NODE_VERSION!
+
 where npm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [ERROR] npm is not installed properly!
-    echo Please reinstall Node.js
+    echo [ERROR] npm is not installed properly. Reinstall Node.js and try again.
     pause
     exit /b 1
-) else (
-    for /f "tokens=*" %%i in ('npm --version') do set NPM_VERSION=%%i
-    echo [OK] npm found: !NPM_VERSION!
 )
+for /f "tokens=*" %%i in ('npm --version') do set NPM_VERSION=%%i
+echo [OK] npm found: !NPM_VERSION!
 
 echo.
-echo Installing project dependencies...
-echo This may take a few minutes...
-echo.
-
+echo Installing dependencies. This may take a few minutes...
 call npm install
 if %errorlevel% neq 0 (
-    echo [ERROR] Failed to install dependencies!
-    echo Please check your internet connection and try again.
+    echo [ERROR] Failed to install dependencies.
     pause
     exit /b 1
 )
 
 echo.
-echo Building the project...
-echo.
-
+echo Building the MCP server...
 call npm run build
 if %errorlevel% neq 0 (
-    echo [ERROR] Failed to build the project!
+    echo [ERROR] Failed to build the project.
     pause
     exit /b 1
 )
+echo [OK] Build completed successfully.
 
 echo.
-echo [OK] Build completed successfully!
-echo.
-
-REM Create .env file if it doesn't exist
 if not exist .env (
-    echo Creating configuration file...
+    echo Creating .env from .env.example...
     copy .env.example .env >nul
-    echo [OK] Created .env file
+    echo [OK] Created .env
     echo.
-    echo IMPORTANT: You need to edit the .env file with your Unanet credentials!
-    echo.
-    choice /C YN /M "Would you like to edit the .env file now"
-    if !errorlevel! equ 1 (
-        notepad .env
-        echo.
-        echo Please save the file after entering your credentials.
-        pause
-    )
+    echo IMPORTANT: Notepad will open .env now.
+    echo Fill in UNANET_USERNAME and UNANET_PASSWORD, then save and close Notepad.
+    echo Leave UNANET_BASE_URL as https://navapbc.unanet.biz unless your team tells you otherwise.
+    pause
+    notepad .env
 ) else (
-    echo [OK] .env file already exists
+    echo [OK] .env already exists. Leaving it unchanged.
+    choice /C YN /M "Open .env for review now"
+    if !errorlevel! equ 1 notepad .env
 )
 
 echo.
-echo ============================================
-echo   Claude Desktop Configuration
-echo ============================================
-echo.
-
-REM Get the current directory
+echo Configuring Claude Desktop...
 set CURRENT_DIR=%CD%
 
-REM Find Claude Desktop config location
-set CLAUDE_CONFIG=%APPDATA%\Claude\claude_desktop_config.json
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Stop';" ^
+  "$configDir=Join-Path $env:APPDATA 'Claude';" ^
+  "$configPath=Join-Path $configDir 'claude_desktop_config.json';" ^
+  "$currentDir=$env:CURRENT_DIR;" ^
+  "New-Item -ItemType Directory -Force -Path $configDir | Out-Null;" ^
+  "if (Test-Path $configPath) { Copy-Item $configPath ($configPath + '.bak.' + (Get-Date -Format 'yyyyMMddHHmmss')); $config = Get-Content $configPath -Raw | ConvertFrom-Json; } else { $config = [pscustomobject]@{} };" ^
+  "if (-not ($config.PSObject.Properties.Name -contains 'mcpServers') -or $null -eq $config.mcpServers) { $config | Add-Member -Force -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}); };" ^
+  "$server = [ordered]@{ command = 'cmd.exe'; args = @('/c', ('cd /d ""' + $currentDir + '"" && node dist\index.js')) };" ^
+  "if ($config.mcpServers.PSObject.Properties.Name -contains 'unanet') { $config.mcpServers.unanet = $server } else { $config.mcpServers | Add-Member -NotePropertyName unanet -NotePropertyValue $server };" ^
+  "$config | ConvertTo-Json -Depth 20 | Set-Content -Encoding UTF8 $configPath;" ^
+  "Write-Host ('[OK] Updated Claude Desktop config: ' + $configPath);"
 
-echo Claude Desktop configuration location:
-echo %CLAUDE_CONFIG%
-echo.
-
-if not exist "%APPDATA%\Claude\" (
-    echo [WARNING] Claude Desktop config directory not found!
-    echo Make sure Claude Desktop is installed.
-    echo.
-    echo Creating directory...
-    mkdir "%APPDATA%\Claude\"
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to update Claude Desktop configuration.
+    echo You can still configure it manually using the README instructions.
+    pause
+    exit /b 1
 )
-
-REM Create config generator script
-echo Creating configuration helper...
-echo.
-
-REM Create a PowerShell script to handle JSON
-echo $configPath = "%CLAUDE_CONFIG%" > config-helper.ps1
-echo $currentDir = "%CURRENT_DIR%" >> config-helper.ps1
-echo. >> config-helper.ps1
-echo # Read existing config or create new one >> config-helper.ps1
-echo if (Test-Path $configPath) { >> config-helper.ps1
-echo     $config = Get-Content $configPath -Raw ^| ConvertFrom-Json >> config-helper.ps1
-echo } else { >> config-helper.ps1
-echo     $config = @{ mcpServers = @{} } >> config-helper.ps1
-echo } >> config-helper.ps1
-echo. >> config-helper.ps1
-echo # Add Unanet server configuration >> config-helper.ps1
-echo $config.mcpServers ^| Add-Member -Type NoteProperty -Name "unanet" -Value @{ >> config-helper.ps1
-echo     command = "node" >> config-helper.ps1
-echo     args = @("$currentDir\dist\index.js") >> config-helper.ps1
-echo     env = @{ >> config-helper.ps1
-echo         UNANET_USERNAME = "your-username" >> config-helper.ps1
-echo         UNANET_PASSWORD = "your-password" >> config-helper.ps1
-echo         UNANET_API_KEY = "your-api-key" >> config-helper.ps1
-echo         UNANET_FIRM_CODE = "your-firm-code" >> config-helper.ps1
-echo         UNANET_BASE_URL = "https://your-instance.unanet.com" >> config-helper.ps1
-echo     } >> config-helper.ps1
-echo } -Force >> config-helper.ps1
-echo. >> config-helper.ps1
-echo # Save the config >> config-helper.ps1
-echo $config ^| ConvertTo-Json -Depth 10 ^| Set-Content $configPath >> config-helper.ps1
-echo. >> config-helper.ps1
-echo Write-Host "Configuration saved to: $configPath" -ForegroundColor Green >> config-helper.ps1
-
-echo.
-choice /C YN /M "Would you like to automatically configure Claude Desktop"
-if !errorlevel! equ 1 (
-    echo.
-    echo Configuring Claude Desktop...
-    powershell -ExecutionPolicy Bypass -File config-helper.ps1
-    
-    echo.
-    echo [OK] Claude Desktop configured!
-    echo.
-    echo IMPORTANT: You still need to:
-    echo 1. Edit the configuration with your actual Unanet credentials
-    echo 2. Restart Claude Desktop
-    echo.
-    choice /C YN /M "Would you like to edit the Claude config now"
-    if !errorlevel! equ 1 (
-        notepad "%CLAUDE_CONFIG%"
-        echo.
-        echo Please update the Unanet credentials in the config file.
-        pause
-    )
-) else (
-    echo.
-    echo Manual configuration required:
-    echo 1. Open: %CLAUDE_CONFIG%
-    echo 2. Add the following configuration:
-    echo.
-    type manual-config.txt
-)
-
-REM Clean up
-if exist config-helper.ps1 del config-helper.ps1
 
 echo.
 echo ============================================
@@ -193,11 +105,11 @@ echo   Setup Complete!
 echo ============================================
 echo.
 echo Next steps:
-echo 1. Make sure your .env file has your Unanet credentials
-echo 2. Make sure Claude Desktop config has your Unanet credentials
-echo 3. Restart Claude Desktop
-echo 4. Test by asking Claude: "Can you list my Unanet projects?"
+echo 1. Fully quit and reopen Claude Desktop.
+echo 2. Ask Claude: "Show my Unanet leave balances."
+echo 3. If tools do not appear, check Claude Desktop's MCP logs.
 echo.
-echo If you encounter issues, see troubleshooting.md
+echo Note: This setup stores credentials only in the local .env file.
+echo The Claude Desktop config points to this project and does not contain your password.
 echo.
 pause
