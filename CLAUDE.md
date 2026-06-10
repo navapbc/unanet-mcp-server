@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Repository Operations
+
+- Pushes to `navapbc/unanet-mcp-server` should use Billy's `billyhunt` GitHub account, not `Billy-Hunt_njdol`.
+- If GitHub CLI is active under the NJDOL account, run `gh auth switch -u billyhunt` before pushing.
+
 ## Development Commands
 
 ### Building and Running
