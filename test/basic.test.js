@@ -15,6 +15,19 @@ import {
 const MOCK_PORT = 3210;
 const MOCK_BASE_URL = `http://127.0.0.1:${MOCK_PORT}`;
 
+function localIsoDate(date) {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
+function addCalendarDays(date, days) {
+	const copy = new Date(date);
+	copy.setDate(copy.getDate() + days);
+	return copy;
+}
+
 function waitForOutput(childProcess, expectedText, timeoutMs = 3000) {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(
@@ -121,7 +134,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 			}
 		});
 
-		it("should retrieve minimized leave balances via bearer-token Platform REST flow", async () => {
+		it("should retrieve UI-aligned leave balances via bearer-token Platform REST flow", async () => {
 			const { getMyLeaveBalancesTool } = await import("../dist/tools/leave.js");
 			const result = await getMyLeaveBalancesTool.handler(
 				{
@@ -137,13 +150,32 @@ describe("Unanet MCP Server Basic Tests", () => {
 			);
 
 			expect(result.success).toBe(true);
-			expect(result.count).toBe(2);
+			expect(result.count).toBe(5);
+			expect(result.primaryLeaveBalance).toEqual({
+				name: "Paid Time Off",
+				balanceHours: 112.69,
+				usedHours: null,
+			});
+			expect(result.leaveBalances.map((balance) => balance.name)).toEqual([
+				"Paid Time Off",
+				"Floating Holiday",
+				"Sick Leave 2026",
+				"Granted Time Off",
+				"LWOP",
+			]);
 			expect(result.leaveBalances[0]).toEqual({
-				name: "PTO 2026",
+				name: "Paid Time Off",
 				projectName: "PTO 2026",
-				taskName: null,
-				reportedBudgetHours: 120,
-				reportedActualHours: 16,
+				taskName: "Paid Time Off",
+				balanceHours: 112.69,
+				usedHours: null,
+				reportedBudgetHours: 112.69,
+				reportedActualHours: null,
+			});
+			expect(result.leaveBalances[2]).toMatchObject({
+				name: "Sick Leave 2026",
+				balanceHours: 4.05,
+				usedHours: 4,
 			});
 			expect(result.leaveBalances[0]).not.toHaveProperty("project");
 			expect(result.leaveBalances[0]).not.toHaveProperty("raw");
@@ -184,6 +216,29 @@ describe("Unanet MCP Server Basic Tests", () => {
 				startDate: "2026-01-01",
 				endDate: "2026-01-15",
 			});
+		});
+
+		it("should default leave ranges from the local calendar date", async () => {
+			const { getMyLeaveBalancesTool } = await import("../dist/tools/leave.js");
+			const before = new Date();
+			const result = await getMyLeaveBalancesTool.handler(
+				{ pageSize: 50 },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
+			);
+			const after = new Date();
+
+			expect(result.success).toBe(true);
+			expect([localIsoDate(before), localIsoDate(after)]).toContain(
+				result.range.endDate,
+			);
+			const endDate = new Date(`${result.range.endDate}T00:00:00`);
+			expect(result.range.startDate).toBe(
+				localIsoDate(addCalendarDays(endDate, -14)),
+			);
 		});
 
 		it("should auto-prefix Platform REST client paths and retrieve projects", async () => {
@@ -375,7 +430,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 						{ projectId: "102", date: "2026-01-03", hours: 1 },
 					],
 				},
-				{ username: "test-user", password: "test-pass", baseUrl: MOCK_BASE_URL },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
 			);
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("multiple timesheets");
@@ -648,6 +707,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 
 			expect(() => schema.parse({ status: "Active", limit: 10 })).not.toThrow();
 			expect(() => schema.parse({ status: "Invalid" })).toThrow();
+			expect(() => schema.parse({ status: "Completed" })).toThrow();
 			expect(() => schema.parse({ limit: -1 })).toThrow();
 		});
 	});

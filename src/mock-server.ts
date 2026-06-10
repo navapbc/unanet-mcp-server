@@ -51,15 +51,33 @@ app.post("/platform/rest/me/leave", (req, res) => {
 			items: [
 				{
 					project: { name: "PTO 2026" },
-					task: null,
-					budget: "120",
-					actuals: "16",
+					task: { name: "Paid Time Off" },
+					budget: "112.69",
+					actuals: null,
 				},
 				{
 					project: { name: "Holiday 2026" },
 					task: { name: "Floating Holiday" },
-					budget: 16,
-					actuals: 8,
+					budget: "0.67",
+					actuals: null,
+				},
+				{
+					project: { name: "Sick Leave 2026" },
+					task: null,
+					budget: "4.05",
+					actuals: "4",
+				},
+				{
+					project: { name: "Granted Time Off" },
+					task: null,
+					budget: 0,
+					actuals: null,
+				},
+				{
+					project: { name: "LWOP" },
+					task: null,
+					budget: "0.02",
+					actuals: null,
 				},
 			],
 		},

@@ -46,17 +46,31 @@ const platformLeaveResponseSchema = z
 		message: "Leave response must include items",
 	});
 
-function formatDate(date: Date): string {
+function padDatePart(value: number): string {
+	return String(value).padStart(2, "0");
+}
+
+function formatLocalDate(date: Date): string {
+	return [
+		date.getFullYear(),
+		padDatePart(date.getMonth() + 1),
+		padDatePart(date.getDate()),
+	].join("-");
+}
+
+function formatUtcDate(date: Date): string {
 	return date.toISOString().split("T")[0];
 }
 
 function defaultEndDate(): string {
-	return formatDate(new Date());
+	return formatLocalDate(new Date());
 }
 
 function defaultStartDate(endDate: string): string {
-	const end = new Date(`${endDate}T00:00:00.000Z`);
-	return formatDate(new Date(end.getTime() - 14 * 24 * 60 * 60 * 1000));
+	const [year, month, day] = endDate.split("-").map(Number);
+	const end = new Date(year, month - 1, day);
+	end.setDate(end.getDate() - 14);
+	return formatLocalDate(end);
 }
 
 function isValidIsoDate(value: string): boolean {
@@ -65,7 +79,7 @@ function isValidIsoDate(value: string): boolean {
 	}
 
 	const parsed = new Date(`${value}T00:00:00.000Z`);
-	return !Number.isNaN(parsed.getTime()) && formatDate(parsed) === value;
+	return !Number.isNaN(parsed.getTime()) && formatUtcDate(parsed) === value;
 }
 
 function compareIsoDates(left: string, right: string): number {
@@ -84,14 +98,24 @@ function toNumberOrNull(value: unknown): number | null {
 function displayLeaveName(
 	item: z.infer<typeof platformLeaveItemSchema>,
 ): string {
-	const projectName = item.project?.name;
-	const taskName = item.task?.name;
+	const projectName = item.project?.name?.trim();
+	const taskName = item.task?.name?.trim();
 
-	if (projectName && taskName) {
-		return `${projectName} / ${taskName}`;
-	}
+	// Unanet's leave endpoint often models the human-facing leave type as the
+	// task, with a broader project/bucket around it. Prefer the task so callers
+	// see labels that match the Unanet UI (for example "Paid Time Off" instead
+	// of "PTO 2026 / Paid Time Off"). Keep projectName separately for context.
+	return taskName || projectName || "Unknown leave type";
+}
 
-	return projectName || taskName || "Unknown leave type";
+function isPrimaryPtoBalance(balance: {
+	name: string;
+	projectName: string | null;
+	taskName: string | null;
+}): boolean {
+	return [balance.name, balance.projectName, balance.taskName].some((value) =>
+		/paid time off|\bpto\b/i.test(value ?? ""),
+	);
 }
 
 export const leaveBalanceInputSchema = z
@@ -175,13 +199,26 @@ export const getMyLeaveBalancesTool = {
 			}
 
 			const leaveItems = parsed.data.items ?? parsed.data.message?.items ?? [];
-			const leaveBalances = leaveItems.map((item) => ({
-				name: displayLeaveName(item),
-				projectName: item.project?.name ?? null,
-				taskName: item.task?.name ?? null,
-				reportedBudgetHours: toNumberOrNull(item.budget),
-				reportedActualHours: toNumberOrNull(item.actuals),
-			}));
+			const leaveBalances = leaveItems.map((item) => {
+				const balanceHours = toNumberOrNull(item.budget);
+				const usedHours = toNumberOrNull(item.actuals);
+
+				return {
+					name: displayLeaveName(item),
+					projectName: item.project?.name ?? null,
+					taskName: item.task?.name ?? null,
+					// Platform REST reports the displayed leave balance in `budget` and
+					// used hours in `actuals`. Expose semantic aliases so downstream UI
+					// does not subtract actuals a second time.
+					balanceHours,
+					usedHours,
+					reportedBudgetHours: balanceHours,
+					reportedActualHours: usedHours,
+				};
+			});
+			const primaryLeaveBalance = leaveBalances.find((balance) =>
+				isPrimaryPtoBalance(balance),
+			);
 
 			return {
 				success: true,
@@ -190,6 +227,13 @@ export const getMyLeaveBalancesTool = {
 					endDate,
 				},
 				count: leaveBalances.length,
+				primaryLeaveBalance: primaryLeaveBalance
+					? {
+							name: primaryLeaveBalance.name,
+							balanceHours: primaryLeaveBalance.balanceHours,
+							usedHours: primaryLeaveBalance.usedHours,
+						}
+					: null,
 				leaveBalances,
 			};
 		} catch (error: any) {

@@ -25,9 +25,12 @@ export const getProjectsTool = {
 	description: "Search projects from Unanet Platform REST",
 	inputSchema: z.object({
 		status: z
-			.enum(["Active", "Inactive", "Completed", "All"])
+			.enum(["Active", "Inactive", "All"])
 			.optional()
-			.default("All"),
+			.default("All")
+			.describe(
+				"Project activity filter. Completed is intentionally not accepted because the Platform REST search flag is not yet confirmed.",
+			),
 		limit: z.number().positive().optional().default(50),
 		projectCode: z
 			.string()
