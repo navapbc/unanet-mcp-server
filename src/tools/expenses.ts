@@ -59,7 +59,11 @@ async function fetchAllMyExpenses(
 	params: Record<string, unknown>,
 ) {
 	const pageSize = Number(params.pageSize ?? 100);
-	const first = await fetchMyExpensesPage(client, { ...params, page: 1, pageSize });
+	const first = await fetchMyExpensesPage(client, {
+		...params,
+		page: 1,
+		pageSize,
+	});
 	const firstItems = itemsFromResponse<any>(first.data);
 	const pageCount = pageCountFromResponse(first.data) ?? 1;
 	const resultCount = resultCountFromResponse(first.data) ?? firstItems.length;
@@ -129,7 +133,11 @@ function detailAmount(detail: any): number | null {
 	);
 }
 
-function expenseMatchesRange(expense: any, startDate?: string, endDate?: string): boolean {
+function expenseMatchesRange(
+	expense: any,
+	startDate?: string,
+	endDate?: string,
+): boolean {
 	if (!startDate && !endDate) return true;
 	const dates = [
 		expense?.postDate,
@@ -150,8 +158,10 @@ function summarizeAllocation(allocation: any) {
 	return {
 		key: allocation?.key ?? null,
 		projectKey: allocation?.project?.key ?? allocation?.projectKey ?? null,
-		projectCode: allocation?.project?.code ?? allocation?.project?.projectCode ?? null,
-		projectName: allocation?.project?.name ?? allocation?.project?.title ?? null,
+		projectCode:
+			allocation?.project?.code ?? allocation?.project?.projectCode ?? null,
+		projectName:
+			allocation?.project?.name ?? allocation?.project?.title ?? null,
 		taskKey: allocation?.task?.key ?? allocation?.taskKey ?? null,
 		taskName: allocation?.task?.name ?? null,
 		allocation: toNumberOrNull(allocation?.allocation),
@@ -174,7 +184,10 @@ function summarizeDetail(detail: any) {
 		sequence: detail?.sequence ?? null,
 		expenseDate: detailDate(detail),
 		expenseType,
-		expenseTypeKey: firstPresent(detail?.expenseType?.key, detail?.expenseTypeKey),
+		expenseTypeKey: firstPresent(
+			detail?.expenseType?.key,
+			detail?.expenseTypeKey,
+		),
 		paymentMethod,
 		paymentMethodKey: firstPresent(
 			detail?.paymentMethod?.key,
@@ -201,9 +214,12 @@ function summarizeExpense(expense: any) {
 		postDate: expense?.postDate ?? null,
 		totalExpenses: toNumberOrNull(expense?.totalExpenses),
 		reimbursableAmount: toNumberOrNull(expense?.reimbursableAmount),
-		expenseCurrencyCode: expense?.expenseCurrencyCode ?? expense?.currency?.code ?? null,
+		expenseCurrencyCode:
+			expense?.expenseCurrencyCode ?? expense?.currency?.code ?? null,
 		attachmentCount: expense?.attachmentCount ?? null,
-		projectAllocations: (expense?.expenseProjectAllocations ?? []).map(summarizeAllocation),
+		projectAllocations: (expense?.expenseProjectAllocations ?? []).map(
+			summarizeAllocation,
+		),
 		detailCount: details.length,
 		details: details.map(summarizeDetail),
 	};
@@ -232,11 +248,17 @@ function expenseText(expense: any): string {
 		.join(" ");
 }
 
-function matchedLineItems(expense: any, terms: string[], startDate?: string, endDate?: string) {
+function matchedLineItems(
+	expense: any,
+	terms: string[],
+	startDate?: string,
+	endDate?: string,
+) {
 	return (expense?.expenseDetails ?? [])
 		.filter((detail: any) => {
 			const date = detailDate(detail);
-			if (date && startDate && compareIsoDates(date, startDate) < 0) return false;
+			if (date && startDate && compareIsoDates(date, startDate) < 0)
+				return false;
 			if (date && endDate && compareIsoDates(date, endDate) > 0) return false;
 			const detailText = [
 				expense?.purpose,
@@ -276,6 +298,14 @@ function normalizeWarnings(validation: any): string[] {
 	].map(String);
 }
 
+function compactParams(params: Record<string, unknown>): Record<string, unknown> {
+	return Object.fromEntries(
+		Object.entries(params).filter(
+			([, value]) => value !== undefined && value !== null && value !== "",
+		),
+	);
+}
+
 function optionalGet(
 	client: ReturnType<typeof createUnanetClient>,
 	enabled: boolean,
@@ -283,7 +313,19 @@ function optionalGet(
 	params: Record<string, unknown>,
 ): Promise<{ data: any }> | { data: any } {
 	if (!enabled) return { data: { items: [] } };
-	return client.get(path, { params });
+	return client.get(path, { params: compactParams(params) });
+}
+
+async function referenceDataRequest(
+	label: string,
+	request: Promise<{ data: any }> | { data: any },
+): Promise<{ label: string; data: any; error: string | null }> {
+	try {
+		const response = await request;
+		return { label, data: response.data, error: null };
+	} catch (error: any) {
+		return { label, data: { items: [] }, error: error.message };
+	}
 }
 
 const dateRangeSchema = z
@@ -298,7 +340,11 @@ const dateRangeSchema = z
 			.optional(),
 	})
 	.superRefine((value, context) => {
-		if (value.startDate && value.endDate && compareIsoDates(value.startDate, value.endDate) > 0) {
+		if (
+			value.startDate &&
+			value.endDate &&
+			compareIsoDates(value.startDate, value.endDate) > 0
+		) {
 			context.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ["startDate"],
@@ -319,8 +365,13 @@ const wizardSchema = z
 	})
 	.passthrough();
 
-function assertAllocationsTotal100(allocations: Array<z.infer<typeof allocationInputSchema>>) {
-	const total = allocations.reduce((sum, allocation) => sum + allocation.allocation, 0);
+function assertAllocationsTotal100(
+	allocations: Array<z.infer<typeof allocationInputSchema>>,
+) {
+	const total = allocations.reduce(
+		(sum, allocation) => sum + allocation.allocation,
+		0,
+	);
 	if (Math.abs(total - 100) > 0.001) {
 		throw new Error("expenseProjectAllocations must total 100 percent");
 	}
@@ -332,8 +383,14 @@ export const getMyExpensesTool = {
 		"Read your Unanet expense reports and return minimized report/detail fields. This is read-only.",
 	inputSchema: dateRangeSchema.and(
 		z.object({
-			status: expenseStatusSchema.or(z.literal("All")).optional().default("All"),
-			voucherType: z.enum(["EXPENSE_REPORT", "EXPENSE_REQUEST"]).optional().default("EXPENSE_REPORT"),
+			status: expenseStatusSchema
+				.or(z.literal("All"))
+				.optional()
+				.default("All"),
+			voucherType: z
+				.enum(["EXPENSE_REPORT", "EXPENSE_REQUEST"])
+				.optional()
+				.default("EXPENSE_REPORT"),
 			pageSize: z.number().int().min(1).max(100).optional().default(50),
 		}),
 	),
@@ -345,10 +402,14 @@ export const getMyExpensesTool = {
 			const result = await fetchAllMyExpenses(client, {
 				pageSize,
 				voucherType,
-				...(args.status && args.status !== "All" ? { status: args.status } : {}),
+				...(args.status && args.status !== "All"
+					? { status: args.status }
+					: {}),
 			});
 			const expenses = result.items
-				.filter((expense) => expenseMatchesRange(expense, args.startDate, args.endDate))
+				.filter((expense) =>
+					expenseMatchesRange(expense, args.startDate, args.endDate),
+				)
 				.map(summarizeExpense);
 
 			return {
@@ -385,7 +446,10 @@ export const getPersonalDevelopmentFundStatusTool = {
 					"certification",
 					"course",
 				]),
-			statuses: z.array(expenseStatusSchema).optional().default([...reimbursableStatuses]),
+			statuses: z
+				.array(expenseStatusSchema)
+				.optional()
+				.default([...reimbursableStatuses]),
 			pageSize: z.number().int().min(1).max(100).optional().default(100),
 		}),
 	),
@@ -417,16 +481,17 @@ export const getPersonalDevelopmentFundStatusTool = {
 			const lineItems = expenses.flatMap((expense) =>
 				matchedLineItems(expense, matchTerms, args.startDate, args.endDate),
 			);
-			const totalSpent = lineItems.length > 0
-				? lineItems.reduce((sum, item) => sum + (item.matchedAmount ?? 0), 0)
-				: expenses.reduce(
-						(sum, expense) =>
-							sum +
-							(toNumberOrNull(expense?.reimbursableAmount) ??
-								toNumberOrNull(expense?.totalExpenses) ??
-								0),
-						0,
-					);
+			const totalSpent =
+				lineItems.length > 0
+					? lineItems.reduce((sum, item) => sum + (item.matchedAmount ?? 0), 0)
+					: expenses.reduce(
+							(sum, expense) =>
+								sum +
+								(toNumberOrNull(expense?.reimbursableAmount) ??
+									toNumberOrNull(expense?.totalExpenses) ??
+									0),
+							0,
+						);
 
 			return {
 				success: true,
@@ -439,7 +504,9 @@ export const getPersonalDevelopmentFundStatusTool = {
 				partial: result.partial,
 				totalSpent,
 				annualBudget: args.annualBudget ?? null,
-				remainingBudget: args.annualBudget ? args.annualBudget - totalSpent : null,
+				remainingBudget: args.annualBudget
+					? args.annualBudget - totalSpent
+					: null,
 				lineItems,
 				expenses: expenses.map(summarizeExpense),
 			};
@@ -451,7 +518,8 @@ export const getPersonalDevelopmentFundStatusTool = {
 
 export const getMyExpenseReportTool = {
 	name: "unanet_get_my_expense_report",
-	description: "Read one of your Unanet expense reports, optionally including validation results.",
+	description:
+		"Read one of your Unanet expense reports, optionally including validation results.",
 	inputSchema: z.object({
 		expenseId: z.number().int().positive(),
 		includeValidation: z.boolean().optional().default(false),
@@ -462,9 +530,11 @@ export const getMyExpenseReportTool = {
 			const [expenseResponse, validationResponse] = await Promise.all([
 				client.get(`/me/expenses/${args.expenseId}`),
 				args.includeValidation
-					? client.get(`/me/expenses/${args.expenseId}/validate`).catch((error) => ({
-							data: { error: error.message },
-						}))
+					? client
+							.get(`/me/expenses/${args.expenseId}/validate`)
+							.catch((error) => ({
+								data: { error: error.message },
+							}))
 					: Promise.resolve(null),
 			]);
 
@@ -498,26 +568,40 @@ export const getExpenseReferenceDataTool = {
 			const includeCurrencies = args.includeCurrencies ?? true;
 			const client = createUnanetClient(auth);
 			const [expenseTypes, paymentMethods, currencies] = await Promise.all([
-				optionalGet(client, includeExpenseTypes, "/expense-types", {
-					page: 1,
-					pageSize,
-					name: args.search,
-					enabled: true,
-				}),
-				optionalGet(client, includePaymentMethods, "/payment-methods", {
-					page: 1,
-					pageSize,
-					activeOnly: true,
-				}),
-				optionalGet(client, includeCurrencies, "/currencies/currency-codes", {
-					page: 1,
-					pageSize,
-					currencyCode: args.search,
-				}),
+				referenceDataRequest(
+					"expenseTypes",
+					optionalGet(client, includeExpenseTypes, "/expense-types", {
+						page: 1,
+						pageSize,
+						name: args.search,
+						enabled: true,
+					}),
+				),
+				referenceDataRequest(
+					"paymentMethods",
+					optionalGet(client, includePaymentMethods, "/payment-methods", {
+						page: 1,
+						pageSize,
+						activeOnly: true,
+					}),
+				),
+				referenceDataRequest(
+					"currencies",
+					optionalGet(client, includeCurrencies, "/currencies/currency-codes", {
+						page: 1,
+						pageSize,
+						currencyCode: args.search,
+					}),
+				),
 			]);
 
+			const endpointErrors = [expenseTypes, paymentMethods, currencies]
+				.filter((result) => result.error)
+				.map((result) => ({ endpoint: result.label, error: result.error }));
+
 			return {
-				success: true,
+				success: endpointErrors.length < 3,
+				endpointErrors,
 				expenseTypes: itemsFromResponse<any>(expenseTypes.data).map((type) => ({
 					key: type.key,
 					name: type.name ?? type.expenseTypeName,
@@ -525,13 +609,15 @@ export const getExpenseReferenceDataTool = {
 					wizardType: type.wizardType ?? null,
 					receiptRequired: type.receiptRequired ?? null,
 				})),
-				paymentMethods: itemsFromResponse<any>(paymentMethods.data).map((method) => ({
-					key: method.key,
-					code: method.paymentMethodCode,
-					description: method.description ?? null,
-					reimbursable: method.reimbursable ?? null,
-					active: method.active ?? null,
-				})),
+				paymentMethods: itemsFromResponse<any>(paymentMethods.data).map(
+					(method) => ({
+						key: method.key,
+						code: method.paymentMethodCode,
+						description: method.description ?? null,
+						reimbursable: method.reimbursable ?? null,
+						active: method.active ?? null,
+					}),
+				),
 				currencies: itemsFromResponse<any>(currencies.data).map((currency) => ({
 					key: currency.key,
 					code: currency.code,
@@ -550,10 +636,15 @@ export const createExpenseReportDraftTool = {
 	description:
 		"Create a draft Unanet expense report shell. This writes to Unanet and never submits the report.",
 	inputSchema: z.object({
-		confirm: z.literal(true).describe("Must be true to create a live draft expense report."),
+		confirm: z
+			.literal(true)
+			.describe("Must be true to create a live draft expense report."),
 		purpose: z.string().min(1),
 		location: z.string().optional(),
-		voucherType: z.enum(["EXPENSE_REPORT", "EXPENSE_REQUEST"]).optional().default("EXPENSE_REPORT"),
+		voucherType: z
+			.enum(["EXPENSE_REPORT", "EXPENSE_REQUEST"])
+			.optional()
+			.default("EXPENSE_REPORT"),
 		expenseProjectAllocations: z.array(allocationInputSchema).min(1),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
@@ -568,14 +659,18 @@ export const createExpenseReportDraftTool = {
 			});
 			const expenseId = response.data?.key;
 			const expense = expenseId
-				? await client.get(`/me/expenses/${expenseId}`).then((detail) => summarizeExpense(detail.data)).catch(() => null)
+				? await client
+						.get(`/me/expenses/${expenseId}`)
+						.then((detail) => summarizeExpense(detail.data))
+						.catch(() => null)
 				: null;
 
 			return {
 				success: true,
 				expenseId,
 				expense,
-				message: "Draft expense report created. Review and submit manually in Unanet when ready.",
+				message:
+					"Draft expense report created. Review and submit manually in Unanet when ready.",
 			};
 		} catch (error: any) {
 			return { success: false, error: error.message };
@@ -588,12 +683,20 @@ export const addExpenseDetailTool = {
 	description:
 		"Add a line item to a draft Unanet expense report. This writes to Unanet and never submits the report.",
 	inputSchema: z.object({
-		confirm: z.literal(true).describe("Must be true to add a live expense detail."),
+		confirm: z
+			.literal(true)
+			.describe("Must be true to add a live expense detail."),
 		expenseId: z.number().int().positive(),
-		expenseDate: z.string().refine(isValidIsoDate, "expenseDate must be a valid YYYY-MM-DD date"),
+		expenseDate: z
+			.string()
+			.refine(isValidIsoDate, "expenseDate must be a valid YYYY-MM-DD date"),
 		expenseTypeKey: z.number().int().positive(),
 		paymentMethodKey: z.number().int().positive(),
-		transactionCurrency: z.number().int().positive().describe("Currency key, e.g. the USD key from reference data."),
+		transactionCurrency: z
+			.number()
+			.int()
+			.positive()
+			.describe("Currency key, e.g. the USD key from reference data."),
 		amount: z.number().positive(),
 		expenseAmount: z.number().positive().optional(),
 		exchangeRate: z.number().positive().optional().default(1),
@@ -608,13 +711,17 @@ export const addExpenseDetailTool = {
 		vendorName: z.string().optional(),
 		receiptIncluded: z.boolean().optional(),
 		noReceiptReason: z.string().optional(),
-		wizard: wizardSchema.describe("Unanet expense wizard payload, including a discriminator `type`."),
+		wizard: wizardSchema.describe(
+			"Unanet expense wizard payload, including a discriminator `type`.",
+		),
 		validateAfterAdd: z.boolean().optional().default(true),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
 		try {
 			const client = createUnanetClient(auth);
-			const expenseResponse = await client.get(`/me/expenses/${args.expenseId}`);
+			const expenseResponse = await client.get(
+				`/me/expenses/${args.expenseId}`,
+			);
 			if (expenseResponse.data?.status !== "INUSE") {
 				return {
 					success: false,
@@ -639,9 +746,15 @@ export const addExpenseDetailTool = {
 				noReceiptReason: args.noReceiptReason,
 				wizard: args.wizard,
 			};
-			const response = await client.post(`/me/expenses/${args.expenseId}/details`, body);
+			const response = await client.post(
+				`/me/expenses/${args.expenseId}/details`,
+				body,
+			);
 			const validation = args.validateAfterAdd
-				? await client.get(`/me/expenses/${args.expenseId}/validate`).then((result) => result.data).catch((error) => ({ error: error.message }))
+				? await client
+						.get(`/me/expenses/${args.expenseId}/validate`)
+						.then((result) => result.data)
+						.catch((error) => ({ error: error.message }))
 				: null;
 
 			return {
@@ -649,7 +762,8 @@ export const addExpenseDetailTool = {
 				expenseId: args.expenseId,
 				detailId: response.data?.key ?? null,
 				validation,
-				message: "Expense detail added to draft. Review and submit manually in Unanet when ready.",
+				message:
+					"Expense detail added to draft. Review and submit manually in Unanet when ready.",
 			};
 		} catch (error: any) {
 			return { success: false, error: error.message };
@@ -667,9 +781,12 @@ export const validateExpenseReportTool = {
 	handler: async (args: any, auth: UnanetAuth) => {
 		try {
 			const client = createUnanetClient(auth);
-			const response = await client.get(`/me/expenses/${args.expenseId}/validate`, {
-				params: { submitValidation: args.submitValidation },
-			});
+			const response = await client.get(
+				`/me/expenses/${args.expenseId}/validate`,
+				{
+					params: { submitValidation: args.submitValidation },
+				},
+			);
 			const errors = normalizeErrors(response.data);
 			const warnings = normalizeWarnings(response.data);
 			return {

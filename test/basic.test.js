@@ -825,7 +825,9 @@ describe("Unanet MCP Server Basic Tests", () => {
 					expect(response.result.tools).toBeInstanceOf(Array);
 					const toolNames = response.result.tools.map((tool) => tool.name);
 					expect(toolNames).toContain("unanet_get_my_leave_balances");
-					expect(toolNames).toContain("unanet_get_personal_development_fund_status");
+					expect(toolNames).toContain(
+						"unanet_get_personal_development_fund_status",
+					);
 					expect(toolNames).toContain("unanet_get_my_expenses");
 					expect(toolNames).not.toContain("unanet_update_timesheet");
 					expect(toolNames).not.toContain("unanet_update_project_budget");

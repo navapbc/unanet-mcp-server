@@ -37,7 +37,11 @@ const mockExpenses: any[] = [
 			{
 				key: 7001,
 				expenseReportKey: 9001,
-				project: { key: 501, code: "PROF-DEV", name: "Professional Development" },
+				project: {
+					key: 501,
+					code: "PROF-DEV",
+					name: "Professional Development",
+				},
 				allocation: 100,
 				sequence: 0,
 			},
@@ -49,7 +53,11 @@ const mockExpenses: any[] = [
 				projectAllocationKey: 7001,
 				sequence: 0,
 				expenseType: { key: 301, expenseTypeName: "Training / Conference" },
-				paymentMethod: { key: 401, paymentMethodCode: "EMPLOYEE_PAID", description: "Employee Paid" },
+				paymentMethod: {
+					key: 401,
+					paymentMethodCode: "EMPLOYEE_PAID",
+					description: "Employee Paid",
+				},
 				expenseDate: "2026-05-12",
 				amount: 450,
 				exchangeRate: 1,
@@ -226,13 +234,20 @@ app.get("/platform/rest/me/expenses", (req, res) => {
 	const items = mockExpenses.filter(
 		(expense) => !status || expense.status === status,
 	);
-	res.json({ items, page: 1, pageSize: items.length, resultCount: items.length });
+	res.json({
+		items,
+		page: 1,
+		pageSize: items.length,
+		resultCount: items.length,
+	});
 });
 
 app.post("/platform/rest/me/expenses", (req, res) => {
 	const allocations = req.body?.expenseProjectAllocations;
 	if (!Array.isArray(allocations) || allocations.length === 0) {
-		return res.status(400).json({ error: "expenseProjectAllocations required" });
+		return res
+			.status(400)
+			.json({ error: "expenseProjectAllocations required" });
 	}
 
 	const key = nextExpenseKey++;
@@ -259,7 +274,9 @@ app.post("/platform/rest/me/expenses", (req, res) => {
 						? "Professional Development"
 						: "Project",
 			},
-			task: allocation.taskKey ? { key: allocation.taskKey, name: "Task" } : null,
+			task: allocation.taskKey
+				? { key: allocation.taskKey, name: "Task" }
+				: null,
 			allocation: allocation.allocation,
 			sequence: index,
 		})),
@@ -270,13 +287,17 @@ app.post("/platform/rest/me/expenses", (req, res) => {
 });
 
 app.get("/platform/rest/me/expenses/:id", (req, res) => {
-	const expense = mockExpenses.find((item) => item.key === Number(req.params.id));
+	const expense = mockExpenses.find(
+		(item) => item.key === Number(req.params.id),
+	);
 	if (!expense) return res.status(404).json({ error: "Expense not found" });
 	res.json(expense);
 });
 
 app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
-	const expense = mockExpenses.find((item) => item.key === Number(req.params.id));
+	const expense = mockExpenses.find(
+		(item) => item.key === Number(req.params.id),
+	);
 	if (!expense) return res.status(404).json({ error: "Expense not found" });
 	if (expense.status !== "INUSE") {
 		return res.status(400).json({ error: "Expense is not editable" });
@@ -297,13 +318,17 @@ app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
 		},
 	};
 	expense.expenseDetails.push(detail);
-	expense.totalExpenses += Number(req.body?.expenseAmount ?? req.body?.amount ?? 0);
+	expense.totalExpenses += Number(
+		req.body?.expenseAmount ?? req.body?.amount ?? 0,
+	);
 	expense.reimbursableAmount = expense.totalExpenses;
 	res.json({ key: detail.key });
 });
 
 app.get("/platform/rest/me/expenses/:id/validate", (req, res) => {
-	const expense = mockExpenses.find((item) => item.key === Number(req.params.id));
+	const expense = mockExpenses.find(
+		(item) => item.key === Number(req.params.id),
+	);
 	if (!expense) return res.status(404).json({ error: "Expense not found" });
 	res.json({
 		expenseReportErrors: [],
@@ -360,7 +385,9 @@ app.get("/platform/rest/payment-methods", (_req, res) => {
 });
 
 app.get("/platform/rest/currencies/currency-codes", (_req, res) => {
-	res.json({ items: [{ key: 1, code: "USD", name: "US Dollar", decimals: 2 }] });
+	res.json({
+		items: [{ key: 1, code: "USD", name: "US Dollar", decimals: 2 }],
+	});
 });
 
 const SEARCH_KEY_BY_DATE: Record<string, number> = {
