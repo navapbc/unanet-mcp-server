@@ -32,9 +32,17 @@ import {
 	submitTimesheetForApprovalTool,
 	getTimesheetsTool,
 	getMyTimesheetProjectsTool,
-	submitExpenseTool,
 	approveTimesheetTool,
 } from "./tools/timesheet.js";
+import {
+	getMyExpensesTool,
+	getPersonalDevelopmentFundStatusTool,
+	getMyExpenseReportTool,
+	getExpenseReferenceDataTool,
+	createExpenseReportDraftTool,
+	addExpenseDetailTool,
+	validateExpenseReportTool,
+} from "./tools/expenses.js";
 import {
 	createContactTool,
 	updateLeadTool,
@@ -116,7 +124,14 @@ const auth = (() => {
 	}
 })();
 
-const readOnlyTools = [getMyLeaveBalancesTool];
+const readOnlyTools = [
+	getMyLeaveBalancesTool,
+	getMyExpensesTool,
+	getPersonalDevelopmentFundStatusTool,
+	getMyExpenseReportTool,
+	getExpenseReferenceDataTool,
+	validateExpenseReportTool,
+];
 
 const legacyReadTools = [
 	getProjectsTool,
@@ -135,7 +150,8 @@ const mutatingTools = [
 	editTimeslipTool,
 	deleteTimeslipTool,
 	submitTimesheetForApprovalTool,
-	submitExpenseTool,
+	createExpenseReportDraftTool,
+	addExpenseDetailTool,
 	approveTimesheetTool,
 	createContactTool,
 	updateLeadTool,

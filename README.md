@@ -179,11 +179,16 @@ Legacy `UNANET_API_KEY` and `UNANET_FIRM_CODE` are no longer needed for the Plat
 
 ## Tool surface
 
-### Default safe tool
+### Default safe read tools
 
 | Tool | Description |
 | --- | --- |
 | `unanet_get_my_leave_balances` | Read your leave balances for a date range. |
+| `unanet_get_my_expenses` | Read your expense reports and minimized line-item details. |
+| `unanet_get_personal_development_fund_status` | Estimate personal/professional-development spending from expense reports; remaining balance is calculated only when a budget is provided. |
+| `unanet_get_my_expense_report` | Read one expense report, optionally with validation. |
+| `unanet_get_expense_reference_data` | Read expense types, payment methods, and currency codes needed to draft reports. |
+| `unanet_validate_expense_report` | Validate a draft expense report without submitting it. |
 
 ### Additional read tools
 
@@ -218,7 +223,8 @@ UNANET_ENABLE_WRITE_TOOLS=true
 | `unanet_edit_timeslip` | Live write; changes the hours and/or comment of an existing entry in place. Identify by `timeslipKey`, or `projectId` + `date`; ambiguous matches return candidates instead of guessing. Requires `confirm: true`. |
 | `unanet_delete_timeslip` | Live write; clears an entry (sets it to 0 hours and removes the comment). Unanet has no true row delete, so the project may still appear on the sheet with no hours. Requires `confirm: true`. |
 | `unanet_submit_timesheet_for_approval` | Live write; validates the timesheet, then submits it for approval. Refuses on errors; holds on warnings unless `ignoreWarnings: true`. One-way action — requires `confirm: true`. |
-| `unanet_submit_expense` | Disabled/fail-closed until expense allocation keys are modeled. |
+| `unanet_create_expense_report_draft` | Live write; creates a draft expense report shell with explicit project allocations. Does not submit. Requires `confirm: true`. |
+| `unanet_add_expense_detail` | Live write; adds one line item to a draft expense report using explicit expense type, payment method, currency, and wizard keys. Does not submit. Requires `confirm: true`. |
 | `unanet_update_project_budget` | Disabled/fail-closed; Platform REST requires a full project update payload. |
 | `unanet_update_lead` | Disabled/fail-closed; no Platform REST lead endpoint identified. |
 | `unanet_create_opportunity` | Disabled/fail-closed; no Platform REST opportunity endpoint identified. |

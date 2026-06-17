@@ -17,6 +17,76 @@ const PORT = Number(process.env.PORT || 3000);
 // Test-only counter so tests can assert how many timesheet PUTs happened
 // (used to verify multi-entry add is all-or-nothing).
 let timesheetPutCount = 0;
+let nextExpenseKey = 9003;
+let nextExpenseDetailKey = 9101;
+
+const mockExpenses: any[] = [
+	{
+		key: 9001,
+		purpose: "Professional development - AI conference",
+		location: "Chicago, IL",
+		status: "COMPLETED",
+		voucherType: "EXPENSE_REPORT",
+		createdDate: "2026-05-15T10:00:00Z",
+		postDate: "2026-05-15",
+		totalExpenses: 450,
+		reimbursableAmount: 450,
+		expenseCurrencyCode: "USD",
+		attachmentCount: 1,
+		expenseProjectAllocations: [
+			{
+				key: 7001,
+				expenseReportKey: 9001,
+				project: { key: 501, code: "PROF-DEV", name: "Professional Development" },
+				allocation: 100,
+				sequence: 0,
+			},
+		],
+		expenseDetails: [
+			{
+				key: 8001,
+				expenseReportKey: 9001,
+				projectAllocationKey: 7001,
+				sequence: 0,
+				expenseType: { key: 301, expenseTypeName: "Training / Conference" },
+				paymentMethod: { key: 401, paymentMethodCode: "EMPLOYEE_PAID", description: "Employee Paid" },
+				expenseDate: "2026-05-12",
+				amount: 450,
+				exchangeRate: 1,
+				expenseAmount: 450,
+				transactionCurrency: { key: 1, code: "USD", name: "US Dollar" },
+				vendorName: "AI Conf",
+				summary: "AI conference registration",
+				comments: "Professional development fund",
+				receiptIncluded: true,
+				wizard: { type: "ENTERTAINMENT" },
+			},
+		],
+	},
+	{
+		key: 9002,
+		purpose: "Chicago travel",
+		location: "Chicago, IL",
+		status: "INUSE",
+		voucherType: "EXPENSE_REPORT",
+		createdDate: "2026-05-20T10:00:00Z",
+		postDate: "2026-05-20",
+		totalExpenses: 83.86,
+		reimbursableAmount: 83.86,
+		expenseCurrencyCode: "USD",
+		attachmentCount: 0,
+		expenseProjectAllocations: [
+			{
+				key: 7002,
+				expenseReportKey: 9002,
+				project: { key: 502, code: "TRAVEL", name: "Travel" },
+				allocation: 100,
+				sequence: 0,
+			},
+		],
+		expenseDetails: [],
+	},
+];
 
 app.post("/platform/rest/login", (req, res) => {
 	const { username, password } = req.body || {};
@@ -149,6 +219,148 @@ app.get("/platform/rest/projects/:id", (req, res) => {
 			},
 		],
 	});
+});
+
+app.get("/platform/rest/me/expenses", (req, res) => {
+	const status = req.query.status;
+	const items = mockExpenses.filter(
+		(expense) => !status || expense.status === status,
+	);
+	res.json({ items, page: 1, pageSize: items.length, resultCount: items.length });
+});
+
+app.post("/platform/rest/me/expenses", (req, res) => {
+	const allocations = req.body?.expenseProjectAllocations;
+	if (!Array.isArray(allocations) || allocations.length === 0) {
+		return res.status(400).json({ error: "expenseProjectAllocations required" });
+	}
+
+	const key = nextExpenseKey++;
+	const expense = {
+		key,
+		purpose: req.body?.purpose ?? null,
+		location: req.body?.location ?? null,
+		status: "INUSE",
+		voucherType: req.body?.voucherType ?? "EXPENSE_REPORT",
+		createdDate: "2026-06-01T10:00:00Z",
+		postDate: "2026-06-01",
+		totalExpenses: 0,
+		reimbursableAmount: 0,
+		expenseCurrencyCode: "USD",
+		attachmentCount: 0,
+		expenseProjectAllocations: allocations.map((allocation, index) => ({
+			key: 7100 + index,
+			expenseReportKey: key,
+			project: {
+				key: allocation.projectKey,
+				code: allocation.projectKey === 501 ? "PROF-DEV" : "PROJECT",
+				name:
+					allocation.projectKey === 501
+						? "Professional Development"
+						: "Project",
+			},
+			task: allocation.taskKey ? { key: allocation.taskKey, name: "Task" } : null,
+			allocation: allocation.allocation,
+			sequence: index,
+		})),
+		expenseDetails: [],
+	};
+	mockExpenses.push(expense);
+	res.json({ key });
+});
+
+app.get("/platform/rest/me/expenses/:id", (req, res) => {
+	const expense = mockExpenses.find((item) => item.key === Number(req.params.id));
+	if (!expense) return res.status(404).json({ error: "Expense not found" });
+	res.json(expense);
+});
+
+app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
+	const expense = mockExpenses.find((item) => item.key === Number(req.params.id));
+	if (!expense) return res.status(404).json({ error: "Expense not found" });
+	if (expense.status !== "INUSE") {
+		return res.status(400).json({ error: "Expense is not editable" });
+	}
+	const detail = {
+		key: nextExpenseDetailKey++,
+		expenseReportKey: expense.key,
+		sequence: expense.expenseDetails.length,
+		...req.body,
+		expenseType: {
+			key: req.body?.expenseTypeKey,
+			expenseTypeName: "Training / Conference",
+		},
+		paymentMethod: {
+			key: req.body?.paymentMethodKey,
+			paymentMethodCode: "EMPLOYEE_PAID",
+			description: "Employee Paid",
+		},
+	};
+	expense.expenseDetails.push(detail);
+	expense.totalExpenses += Number(req.body?.expenseAmount ?? req.body?.amount ?? 0);
+	expense.reimbursableAmount = expense.totalExpenses;
+	res.json({ key: detail.key });
+});
+
+app.get("/platform/rest/me/expenses/:id/validate", (req, res) => {
+	const expense = mockExpenses.find((item) => item.key === Number(req.params.id));
+	if (!expense) return res.status(404).json({ error: "Expense not found" });
+	res.json({
+		expenseReportErrors: [],
+		expenseReportWarnings:
+			expense.attachmentCount === 0 ? ["At least one receipt is missing"] : [],
+		expenseErrors: [],
+		expenseWarnings: [],
+		wizardErrors: [],
+		wizardReceiptErrors: [],
+		wizardWarnings: [],
+	});
+});
+
+app.get("/platform/rest/expense-types", (_req, res) => {
+	res.json({
+		items: [
+			{
+				key: 301,
+				name: "Training / Conference",
+				code: "TRAINING",
+				wizardType: "ENTERTAINMENT",
+				receiptRequired: true,
+			},
+			{
+				key: 302,
+				name: "Books / Education Materials",
+				code: "BOOKS",
+				wizardType: "ENTERTAINMENT",
+				receiptRequired: true,
+			},
+		],
+	});
+});
+
+app.get("/platform/rest/payment-methods", (_req, res) => {
+	res.json({
+		items: [
+			{
+				key: 401,
+				paymentMethodCode: "EMPLOYEE_PAID",
+				description: "Employee Paid",
+				reimbursable: true,
+				active: true,
+			},
+			{
+				key: 402,
+				paymentMethodCode: "COMPANY_PAID",
+				description: "Company Paid",
+				reimbursable: false,
+				active: true,
+			},
+		],
+	});
+});
+
+app.get("/platform/rest/currencies/currency-codes", (_req, res) => {
+	res.json({ items: [{ key: 1, code: "USD", name: "US Dollar", decimals: 2 }] });
 });
 
 const SEARCH_KEY_BY_DATE: Record<string, number> = {

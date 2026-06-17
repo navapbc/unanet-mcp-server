@@ -627,6 +627,162 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(projects.projects[0].code).toBe("PRJ-001");
 			expect(templates.templates[0].projectKey).toBe(101);
 		});
+
+		it("should summarize personal development fund spending from expenses", async () => {
+			const { getPersonalDevelopmentFundStatusTool } = await import(
+				"../dist/tools/expenses.js"
+			);
+			const result = await getPersonalDevelopmentFundStatusTool.handler(
+				{ annualBudget: 1000, startDate: "2026-01-01", endDate: "2026-12-31" },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
+			);
+
+			expect(result.success).toBe(true);
+			expect(result.count).toBe(1);
+			expect(result.totalSpent).toBe(450);
+			expect(result.remainingBudget).toBe(550);
+			expect(result.lineItems[0]).toMatchObject({
+				expensePurpose: "Professional development - AI conference",
+				vendorName: "AI Conf",
+				matchedAmount: 450,
+			});
+		});
+
+		it("should read expense reports and expense reference data", async () => {
+			const { getMyExpensesTool, getExpenseReferenceDataTool } = await import(
+				"../dist/tools/expenses.js"
+			);
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
+
+			const expenses = await getMyExpensesTool.handler(
+				{ status: "All", pageSize: 50 },
+				auth,
+			);
+			const reference = await getExpenseReferenceDataTool.handler(
+				{ pageSize: 50 },
+				auth,
+			);
+
+			expect(expenses.success).toBe(true);
+			expect(expenses.expenses[0]).toMatchObject({
+				key: 9001,
+				purpose: "Professional development - AI conference",
+				totalExpenses: 450,
+			});
+			expect(expenses.expenses[0].details[0]).toMatchObject({
+				expenseType: "Training / Conference",
+				expenseAmount: 450,
+			});
+			expect(reference.success).toBe(true);
+			expect(reference.expenseTypes[0]).toMatchObject({
+				key: 301,
+				name: "Training / Conference",
+			});
+			expect(reference.paymentMethods[0]).toMatchObject({
+				key: 401,
+				code: "EMPLOYEE_PAID",
+			});
+			expect(reference.currencies[0]).toMatchObject({ key: 1, code: "USD" });
+		});
+
+		it("should create expense drafts, add details, and validate without submitting", async () => {
+			const {
+				createExpenseReportDraftTool,
+				addExpenseDetailTool,
+				validateExpenseReportTool,
+			} = await import("../dist/tools/expenses.js");
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
+
+			expect(() =>
+				createExpenseReportDraftTool.inputSchema.parse({
+					purpose: "Professional development",
+					expenseProjectAllocations: [{ projectKey: 501, allocation: 100 }],
+				}),
+			).toThrow();
+
+			const draft = await createExpenseReportDraftTool.handler(
+				{
+					confirm: true,
+					purpose: "Professional development books",
+					location: "Remote",
+					expenseProjectAllocations: [{ projectKey: 501, allocation: 100 }],
+				},
+				auth,
+			);
+			expect(draft.success).toBe(true);
+			expect(draft.expenseId).toBeGreaterThan(0);
+			expect(draft.expense.status).toBe("INUSE");
+
+			expect(() =>
+				addExpenseDetailTool.inputSchema.parse({
+					expenseId: draft.expenseId,
+					expenseDate: "2026-06-01",
+					expenseTypeKey: 301,
+					paymentMethodKey: 401,
+					transactionCurrency: 1,
+					amount: 75,
+					projectAllocationKey: 7100,
+					wizard: { type: "ENTERTAINMENT" },
+				}),
+			).toThrow();
+
+			const detail = await addExpenseDetailTool.handler(
+				{
+					confirm: true,
+					expenseId: draft.expenseId,
+					expenseDate: "2026-06-01",
+					expenseTypeKey: 301,
+					paymentMethodKey: 401,
+					transactionCurrency: 1,
+					amount: 75,
+					projectAllocationKey: 7100,
+					summary: "Professional development book",
+					vendorName: "Bookshop",
+					receiptIncluded: false,
+					wizard: { type: "ENTERTAINMENT" },
+				},
+				auth,
+			);
+			expect(detail.success).toBe(true);
+			expect(detail.detailId).toBeGreaterThan(0);
+			expect(detail.message).toContain("Review and submit manually");
+
+			const validation = await validateExpenseReportTool.handler(
+				{ expenseId: draft.expenseId },
+				auth,
+			);
+			expect(validation.success).toBe(true);
+			expect(validation.warnings).toContain("At least one receipt is missing");
+
+			const completed = await addExpenseDetailTool.handler(
+				{
+					confirm: true,
+					expenseId: 9001,
+					expenseDate: "2026-06-01",
+					expenseTypeKey: 301,
+					paymentMethodKey: 401,
+					transactionCurrency: 1,
+					amount: 75,
+					projectAllocationKey: 7001,
+					wizard: { type: "ENTERTAINMENT" },
+				},
+				auth,
+			);
+			expect(completed.success).toBe(false);
+			expect(completed.error).toContain("not editable");
+		});
 	});
 
 	describe("MCP Server Protocol", () => {
@@ -669,8 +825,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 					expect(response.result.tools).toBeInstanceOf(Array);
 					const toolNames = response.result.tools.map((tool) => tool.name);
 					expect(toolNames).toContain("unanet_get_my_leave_balances");
+					expect(toolNames).toContain("unanet_get_personal_development_fund_status");
+					expect(toolNames).toContain("unanet_get_my_expenses");
 					expect(toolNames).not.toContain("unanet_update_timesheet");
 					expect(toolNames).not.toContain("unanet_update_project_budget");
+					expect(toolNames).not.toContain("unanet_create_expense_report_draft");
 					resolve();
 				});
 
