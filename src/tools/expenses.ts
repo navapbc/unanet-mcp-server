@@ -298,7 +298,9 @@ function normalizeWarnings(validation: any): string[] {
 	].map(String);
 }
 
-function compactParams(params: Record<string, unknown>): Record<string, unknown> {
+function compactParams(
+	params: Record<string, unknown>,
+): Record<string, unknown> {
 	return Object.fromEntries(
 		Object.entries(params).filter(
 			([, value]) => value !== undefined && value !== null && value !== "",
@@ -328,30 +330,37 @@ async function referenceDataRequest(
 	}
 }
 
-const dateRangeSchema = z
-	.object({
-		startDate: z
-			.string()
-			.refine(isValidIsoDate, "startDate must be a valid YYYY-MM-DD date")
-			.optional(),
-		endDate: z
-			.string()
-			.refine(isValidIsoDate, "endDate must be a valid YYYY-MM-DD date")
-			.optional(),
-	})
-	.superRefine((value, context) => {
-		if (
-			value.startDate &&
-			value.endDate &&
-			compareIsoDates(value.startDate, value.endDate) > 0
-		) {
-			context.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ["startDate"],
-				message: "startDate must be on or before endDate",
-			});
-		}
-	});
+const dateRangeShape = {
+	startDate: z
+		.string()
+		.refine(isValidIsoDate, "startDate must be a valid YYYY-MM-DD date")
+		.optional(),
+	endDate: z
+		.string()
+		.refine(isValidIsoDate, "endDate must be a valid YYYY-MM-DD date")
+		.optional(),
+};
+
+// Cross-field validation: startDate must be on or before endDate.
+// Applied via superRefine on a single flattened object so the generated
+// JSON Schema root stays `type: "object"` (a top-level `allOf` from
+// z.intersection breaks Claude Desktop's connector tool-list renderer).
+function refineDateRange(
+	value: { startDate?: string; endDate?: string },
+	context: z.RefinementCtx,
+) {
+	if (
+		value.startDate &&
+		value.endDate &&
+		compareIsoDates(value.startDate, value.endDate) > 0
+	) {
+		context.addIssue({
+			code: z.ZodIssueCode.custom,
+			path: ["startDate"],
+			message: "startDate must be on or before endDate",
+		});
+	}
+}
 
 const allocationInputSchema = z.object({
 	projectKey: z.number().int().positive(),
@@ -381,8 +390,9 @@ export const getMyExpensesTool = {
 	name: "unanet_get_my_expenses",
 	description:
 		"Read your Unanet expense reports and return minimized report/detail fields. This is read-only.",
-	inputSchema: dateRangeSchema.and(
-		z.object({
+	inputSchema: z
+		.object({
+			...dateRangeShape,
 			status: expenseStatusSchema
 				.or(z.literal("All"))
 				.optional()
@@ -392,8 +402,8 @@ export const getMyExpensesTool = {
 				.optional()
 				.default("EXPENSE_REPORT"),
 			pageSize: z.number().int().min(1).max(100).optional().default(50),
-		}),
-	),
+		})
+		.superRefine(refineDateRange),
 	handler: async (args: any, auth: UnanetAuth) => {
 		try {
 			const pageSize = args.pageSize ?? 50;
@@ -430,8 +440,9 @@ export const getPersonalDevelopmentFundStatusTool = {
 	name: "unanet_get_personal_development_fund_status",
 	description:
 		"Estimate personal/professional development spending from your Unanet expense reports. Remaining balance is only calculated when a budget amount is provided.",
-	inputSchema: dateRangeSchema.and(
-		z.object({
+	inputSchema: z
+		.object({
+			...dateRangeShape,
 			annualBudget: z.number().positive().optional(),
 			matchTerms: z
 				.array(z.string().min(1))
@@ -451,8 +462,8 @@ export const getPersonalDevelopmentFundStatusTool = {
 				.optional()
 				.default([...reimbursableStatuses]),
 			pageSize: z.number().int().min(1).max(100).optional().default(100),
-		}),
-	),
+		})
+		.superRefine(refineDateRange),
 	handler: async (args: any, auth: UnanetAuth) => {
 		try {
 			const pageSize = args.pageSize ?? 100;

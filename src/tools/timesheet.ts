@@ -410,7 +410,7 @@ async function loadWritableTimesheet(
 			fullTimesheet: any;
 			timesheetKey: number;
 			timeslips: any[];
-		}
+	}
 	| { ok: false; error: string }
 > {
 	const timesheetRef = await findTimesheet(client, workDate);
