@@ -18,6 +18,18 @@ cp .env.test .env
 npm run test:server
 ```
 
+### End-to-end expense attachment flow
+
+Drives the full expense + receipt-attachment workflow through the compiled
+server binary over JSON-RPC stdio (write tools enabled) against the mock,
+including edge cases (real PDF upload, `detailId` association, read-back
+verification, nonexistent file, >25 MB guard, missing `confirm`, non-editable
+report):
+```bash
+npm run e2e:attachments
+```
+Expect `==== E2E RESULT: PASS ====`.
+
 This will:
 - Start the MCP server with test credentials
 - Send test requests to list tools and resources

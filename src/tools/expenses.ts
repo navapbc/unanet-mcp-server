@@ -1000,18 +1000,53 @@ export const addExpenseAttachmentTool = {
 				{ name, mimeType, length, data: base64Data },
 				args.detailId ? { params: { detailId: args.detailId } } : undefined,
 			);
+			const postedKey = response.data?.key ?? null;
+
+			// Unanet's write responses are unreliable, so read the attachment list
+			// back and confirm the upload actually landed instead of trusting the
+			// POST response alone. Match by returned key when present, otherwise
+			// fall back to name + byte length.
+			let readback: any[] = [];
+			let readbackError: string | null = null;
+			try {
+				const listResponse = await client.get(
+					`/me/expenses/${args.expenseId}/attachments`,
+					{ params: { page: 1, pageSize: 100 } },
+				);
+				readback = itemsFromResponse<any>(listResponse.data).map(
+					summarizeAttachment,
+				);
+			} catch (listError: any) {
+				readbackError = listError.message;
+			}
+
+			const matched =
+				postedKey !== null
+					? readback.find((a) => a.key === postedKey)
+					: readback.find(
+							(a) => a.name === name && a.length === length,
+						);
+			const verified = Boolean(matched);
+			const attachmentId = matched?.key ?? postedKey;
 
 			return {
 				success: true,
+				verified,
 				expenseId: args.expenseId,
-				attachmentId: response.data?.key ?? null,
+				attachmentId,
 				name,
 				mimeType,
 				length,
 				detailId: args.detailId ?? null,
-				message: args.detailId
-					? "Receipt uploaded and associated with the line item. Review and submit manually in Unanet when ready."
-					: "Receipt uploaded to draft expense report. Review and submit manually in Unanet when ready.",
+				readbackError,
+				attachmentsOnReport: readback.length,
+				message: verified
+					? `Receipt uploaded and confirmed present on the report${
+							args.detailId ? " (associated with the line item)" : ""
+						}. Review and submit manually in Unanet when ready.`
+					: `Upload POST succeeded but read-back could NOT confirm the attachment on the report${
+							readbackError ? ` (list failed: ${readbackError})` : ""
+						}. Verify manually in Unanet before relying on it.`,
 			};
 		} catch (error: any) {
 			return { success: false, error: error.message };

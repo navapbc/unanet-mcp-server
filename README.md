@@ -226,7 +226,7 @@ UNANET_ENABLE_WRITE_TOOLS=true
 | `unanet_submit_timesheet_for_approval` | Live write; validates the timesheet, then submits it for approval. Refuses on errors; holds on warnings unless `ignoreWarnings: true`. One-way action — requires `confirm: true`. |
 | `unanet_create_expense_report_draft` | Live write; creates a draft expense report shell with explicit project allocations. Does not submit. Requires `confirm: true`. |
 | `unanet_add_expense_detail` | Live write; adds one line item to a draft expense report using explicit expense type, payment method, currency, and wizard keys. Does not submit. Requires `confirm: true`. |
-| `unanet_add_expense_attachment` | Live write; uploads a receipt to a draft report from a local `filePath` or inline base64 `data`, optionally associating it with a line via `detailId`. MIME type is inferred from the extension. Does not submit. Requires `confirm: true`. |
+| `unanet_add_expense_attachment` | Live write; uploads a receipt to a draft report from a local `filePath` or inline base64 `data`, optionally associating it with a line via `detailId`. MIME type is inferred from the extension; 25 MB cap; `INUSE`-only. After uploading it reads the attachment list back and returns `verified: true/false` (Unanet's write responses are unreliable, so it confirms the file actually landed rather than trusting the POST). Does not submit. Requires `confirm: true`. |
 | `unanet_update_project_budget` | Disabled/fail-closed; Platform REST requires a full project update payload. |
 | `unanet_update_lead` | Disabled/fail-closed; no Platform REST lead endpoint identified. |
 | `unanet_create_opportunity` | Disabled/fail-closed; no Platform REST opportunity endpoint identified. |

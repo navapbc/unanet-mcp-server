@@ -8,7 +8,9 @@
 import express from "express";
 
 const app = express();
-app.use(express.json());
+// Raised from the 100kb default so base64 receipt bodies (multi-MB) are
+// accepted, matching real attachment uploads.
+app.use(express.json({ limit: "50mb" }));
 
 const MOCK_PLATFORM_TOKEN = "mock-platform-token";
 const HOST = "127.0.0.1";
@@ -363,6 +365,12 @@ app.post("/platform/rest/me/expenses/:id/attachments", (req, res) => {
 	};
 	(mockAttachments[expense.key] ??= []).push(attachment);
 	expense.attachmentCount = (expense.attachmentCount ?? 0) + 1;
+	// Test hook: simulate Unanet's flaky write response that stores the
+	// attachment but returns no usable key, forcing the tool's name+length
+	// read-back fallback.
+	if (String(req.body?.name ?? "").includes("__NOKEY__")) {
+		return res.json({});
+	}
 	res.json({ key: attachment.key });
 });
 

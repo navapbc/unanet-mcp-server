@@ -833,9 +833,12 @@ describe("Unanet MCP Server Basic Tests", () => {
 				auth,
 			);
 			expect(upload.success).toBe(true);
+			expect(upload.verified).toBe(true);
 			expect(upload.attachmentId).toBeGreaterThan(0);
+			expect(upload.attachmentsOnReport).toBe(1);
+			expect(upload.readbackError).toBeNull();
 			expect(upload.mimeType).toBe("application/pdf");
-			expect(upload.message).toContain("Review and submit manually");
+			expect(upload.message).toContain("confirmed present");
 
 			const listed = await getExpenseAttachmentsTool.handler(
 				{ expenseId: draft.expenseId },
@@ -873,6 +876,80 @@ describe("Unanet MCP Server Basic Tests", () => {
 			);
 			expect(locked.success).toBe(false);
 			expect(locked.error).toContain("not editable");
+		});
+
+		it("verifies via read-back when the upload POST returns no key", async () => {
+			const { createExpenseReportDraftTool, addExpenseAttachmentTool } =
+				await import("../dist/tools/expenses.js");
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
+			const draft = await createExpenseReportDraftTool.handler(
+				{
+					confirm: true,
+					purpose: "No-key read-back test",
+					expenseProjectAllocations: [{ projectKey: 501, allocation: 100 }],
+				},
+				auth,
+			);
+			// Mock returns {} (no key) for names containing __NOKEY__.
+			const upload = await addExpenseAttachmentTool.handler(
+				{
+					confirm: true,
+					expenseId: draft.expenseId,
+					data: Buffer.from("%PDF mock").toString("base64"),
+					name: "__NOKEY__receipt.pdf",
+				},
+				auth,
+			);
+			expect(upload.success).toBe(true);
+			// POST gave no key, but read-back matched by name+length.
+			expect(upload.verified).toBe(true);
+			expect(upload.attachmentId).toBeGreaterThan(0);
+			expect(upload.message).toContain("confirmed present");
+		});
+
+		it("associates an attachment with a line item via detailId", async () => {
+			const {
+				createExpenseReportDraftTool,
+				addExpenseAttachmentTool,
+				getExpenseAttachmentsTool,
+			} = await import("../dist/tools/expenses.js");
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
+			const draft = await createExpenseReportDraftTool.handler(
+				{
+					confirm: true,
+					purpose: "detailId association test",
+					expenseProjectAllocations: [{ projectKey: 501, allocation: 100 }],
+				},
+				auth,
+			);
+			const upload = await addExpenseAttachmentTool.handler(
+				{
+					confirm: true,
+					expenseId: draft.expenseId,
+					detailId: 91044,
+					data: Buffer.from("%PDF mock").toString("base64"),
+					name: "taxi.pdf",
+				},
+				auth,
+			);
+			expect(upload.success).toBe(true);
+			expect(upload.verified).toBe(true);
+			expect(upload.detailId).toBe(91044);
+			expect(upload.message).toContain("associated with the line item");
+
+			const listed = await getExpenseAttachmentsTool.handler(
+				{ expenseId: draft.expenseId },
+				auth,
+			);
+			expect(listed.attachments[0].detailKey).toBe(91044);
 		});
 	});
 

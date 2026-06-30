@@ -14,6 +14,7 @@
     "clean": "rm -rf dist",
     "fetch-spec": "curl -s -o spec/unanet-openapi.json https://dev.portal.unanet.io/platform/rest/openapi.json && echo 'spec/unanet-openapi.json updated'",
     "spec-drift-check": "node scripts/spec-drift-check.mjs",
+    "e2e:attachments": "npm run build && node test/e2e-attachments.mjs",
     "setup:mac": "bash setup-mac.sh",
     "prepublishOnly": "npm run build",
     "test": "npm run build && vitest run",
