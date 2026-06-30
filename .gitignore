@@ -58,3 +58,6 @@ unanet-plan/
 
 # Pi runtime state
 .pi/
+
+# Unanet API spec blob (large, regenerable via npm run fetch-spec)
+spec/unanet-openapi.json
