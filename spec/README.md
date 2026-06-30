@@ -6,7 +6,7 @@ the reference for building out MCP tools.
 - Spec version observed: `26.4.0.10440 (core 26.4.0.+)`
 - ~1267 operations, 86 resource groups (tags), 960 schemas
 
-The blob is **git-ignored** (it is large and regenerable). Fetch or refresh it with:
+The blob is **committed to the repo** so it is backed up and versioned on GitHub. Refresh it to a newer spec version with:
 
 ```bash
 npm run fetch-spec
