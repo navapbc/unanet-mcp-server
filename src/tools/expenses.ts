@@ -1,7 +1,44 @@
+import { readFileSync } from "node:fs";
+import { basename, extname } from "node:path";
 import { z } from "zod";
 import { type UnanetAuth, createUnanetClient } from "../auth.js";
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// Max receipt size we will base64-encode into a JSON body. Unanet accepts
+// base64 attachments but large blobs are usually a mistake (wrong file).
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+	".pdf": "application/pdf",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif": "image/gif",
+	".webp": "image/webp",
+	".heic": "image/heic",
+	".heif": "image/heif",
+	".tif": "image/tiff",
+	".tiff": "image/tiff",
+	".bmp": "image/bmp",
+};
+
+function inferMimeType(name: string): string | null {
+	return MIME_BY_EXTENSION[extname(name).toLowerCase()] ?? null;
+}
+
+function summarizeAttachment(attachment: any) {
+	return {
+		key: attachment?.key ?? null,
+		name: attachment?.name ?? null,
+		mimeType: attachment?.mimeType ?? null,
+		length: toNumberOrNull(attachment?.length),
+		created: attachment?.created ?? null,
+		createdBy: attachment?.createdBy?.name ?? attachment?.createdBy?.key ?? null,
+		detailKey: attachment?.detailKey ?? null,
+		projectKey: attachment?.projectKey ?? null,
+	};
+}
 
 const EXPENSE_STATUSES = [
 	"REQUESTING",
@@ -806,6 +843,175 @@ export const validateExpenseReportTool = {
 				errors,
 				warnings,
 				validation: response.data,
+			};
+		} catch (error: any) {
+			return { success: false, error: error.message };
+		}
+	},
+};
+
+export const getExpenseAttachmentsTool = {
+	name: "unanet_get_expense_attachments",
+	description:
+		"List the receipt attachments on one of your Unanet expense reports. This is read-only and does not return file bytes.",
+	inputSchema: z.object({
+		expenseId: z.number().int().positive(),
+		pageSize: z.number().int().min(1).max(100).optional().default(100),
+	}),
+	handler: async (args: any, auth: UnanetAuth) => {
+		try {
+			const pageSize = args.pageSize ?? 100;
+			const client = createUnanetClient(auth);
+			const response = await client.get(
+				`/me/expenses/${args.expenseId}/attachments`,
+				{ params: { page: 1, pageSize } },
+			);
+			const items = itemsFromResponse<any>(response.data);
+			return {
+				success: true,
+				expenseId: args.expenseId,
+				count: items.length,
+				resultCount: resultCountFromResponse(response.data) ?? items.length,
+				attachments: items.map(summarizeAttachment),
+			};
+		} catch (error: any) {
+			return { success: false, error: error.message };
+		}
+	},
+};
+
+export const addExpenseAttachmentTool = {
+	name: "unanet_add_expense_attachment",
+	description:
+		"Upload a receipt to a draft Unanet expense report. Provide either a local filePath or inline base64 data. Optionally associate it with a specific line via detailId. This writes to Unanet and never submits the report.",
+	inputSchema: z
+		.object({
+			confirm: z
+				.literal(true)
+				.describe("Must be true to upload a live receipt attachment."),
+			expenseId: z.number().int().positive(),
+			detailId: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe("Optional expense detail (line item) key to attach this receipt to."),
+			filePath: z
+				.string()
+				.min(1)
+				.optional()
+				.describe("Absolute local path to the receipt file to read and upload."),
+			data: z
+				.string()
+				.min(1)
+				.optional()
+				.describe("Base64-encoded receipt bytes. Use instead of filePath."),
+			name: z
+				.string()
+				.min(1)
+				.optional()
+				.describe("Attachment file name. Defaults to the filePath basename."),
+			mimeType: z
+				.string()
+				.min(1)
+				.optional()
+				.describe("MIME type. Inferred from the file extension when omitted."),
+		})
+		.superRefine((value, context) => {
+			if (!value.filePath && !value.data) {
+				context.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["filePath"],
+					message: "Provide either filePath or data.",
+				});
+			}
+			if (value.filePath && value.data) {
+				context.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["data"],
+					message: "Provide filePath or data, not both.",
+				});
+			}
+			if (value.data && !value.name) {
+				context.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["name"],
+					message: "name is required when uploading inline data.",
+				});
+			}
+		}),
+	handler: async (args: any, auth: UnanetAuth) => {
+		try {
+			let base64Data: string;
+			let length: number;
+			const name = args.name ?? (args.filePath ? basename(args.filePath) : null);
+			if (!name) {
+				return { success: false, error: "Could not determine attachment name." };
+			}
+
+			if (args.filePath) {
+				let buffer: Buffer;
+				try {
+					buffer = readFileSync(args.filePath);
+				} catch (readError: any) {
+					return {
+						success: false,
+						error: `Could not read file ${args.filePath}: ${readError.message}`,
+					};
+				}
+				length = buffer.length;
+				base64Data = buffer.toString("base64");
+			} else {
+				base64Data = args.data;
+				length = Buffer.from(base64Data, "base64").length;
+			}
+
+			if (length === 0) {
+				return { success: false, error: "Attachment is empty (0 bytes)." };
+			}
+			if (length > MAX_ATTACHMENT_BYTES) {
+				return {
+					success: false,
+					error: `Attachment is ${length} bytes, over the ${MAX_ATTACHMENT_BYTES}-byte limit.`,
+				};
+			}
+
+			const mimeType = args.mimeType ?? inferMimeType(name);
+			if (!mimeType) {
+				return {
+					success: false,
+					error: `Could not infer MIME type for "${name}". Pass mimeType explicitly (e.g. application/pdf).`,
+				};
+			}
+
+			const client = createUnanetClient(auth);
+			const expenseResponse = await client.get(
+				`/me/expenses/${args.expenseId}`,
+			);
+			if (expenseResponse.data?.status !== "INUSE") {
+				return {
+					success: false,
+					error: `Expense report ${args.expenseId} is not editable; status is ${expenseResponse.data?.status ?? "unknown"}`,
+				};
+			}
+
+			const response = await client.post(
+				`/me/expenses/${args.expenseId}/attachments`,
+				{ name, mimeType, length, data: base64Data },
+				args.detailId ? { params: { detailId: args.detailId } } : undefined,
+			);
+
+			return {
+				success: true,
+				expenseId: args.expenseId,
+				attachmentId: response.data?.key ?? null,
+				name,
+				mimeType,
+				length,
+				detailId: args.detailId ?? null,
+				message: args.detailId
+					? "Receipt uploaded and associated with the line item. Review and submit manually in Unanet when ready."
+					: "Receipt uploaded to draft expense report. Review and submit manually in Unanet when ready.",
 			};
 		} catch (error: any) {
 			return { success: false, error: error.message };

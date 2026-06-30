@@ -783,6 +783,97 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(completed.success).toBe(false);
 			expect(completed.error).toContain("not editable");
 		});
+
+		it("should upload and list receipt attachments on a draft", async () => {
+			const {
+				createExpenseReportDraftTool,
+				addExpenseAttachmentTool,
+				getExpenseAttachmentsTool,
+			} = await import("../dist/tools/expenses.js");
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
+
+			const draft = await createExpenseReportDraftTool.handler(
+				{
+					confirm: true,
+					purpose: "Receipt upload test",
+					expenseProjectAllocations: [{ projectKey: 501, allocation: 100 }],
+				},
+				auth,
+			);
+			expect(draft.success).toBe(true);
+
+			// Requires confirm: true.
+			expect(() =>
+				addExpenseAttachmentTool.inputSchema.parse({
+					expenseId: draft.expenseId,
+					data: Buffer.from("hello").toString("base64"),
+					name: "r.pdf",
+				}),
+			).toThrow();
+
+			// Requires exactly one of filePath/data.
+			expect(() =>
+				addExpenseAttachmentTool.inputSchema.parse({
+					confirm: true,
+					expenseId: draft.expenseId,
+				}),
+			).toThrow();
+
+			const upload = await addExpenseAttachmentTool.handler(
+				{
+					confirm: true,
+					expenseId: draft.expenseId,
+					data: Buffer.from("%PDF-1.4 mock receipt").toString("base64"),
+					name: "uber-2026-06-01.pdf",
+				},
+				auth,
+			);
+			expect(upload.success).toBe(true);
+			expect(upload.attachmentId).toBeGreaterThan(0);
+			expect(upload.mimeType).toBe("application/pdf");
+			expect(upload.message).toContain("Review and submit manually");
+
+			const listed = await getExpenseAttachmentsTool.handler(
+				{ expenseId: draft.expenseId },
+				auth,
+			);
+			expect(listed.success).toBe(true);
+			expect(listed.count).toBe(1);
+			expect(listed.attachments[0]).toMatchObject({
+				name: "uber-2026-06-01.pdf",
+				mimeType: "application/pdf",
+			});
+
+			// Unknown extension with no explicit mimeType is rejected.
+			const badMime = await addExpenseAttachmentTool.handler(
+				{
+					confirm: true,
+					expenseId: draft.expenseId,
+					data: Buffer.from("x").toString("base64"),
+					name: "receipt.xyz",
+				},
+				auth,
+			);
+			expect(badMime.success).toBe(false);
+			expect(badMime.error).toContain("MIME type");
+
+			// Not editable report is rejected.
+			const locked = await addExpenseAttachmentTool.handler(
+				{
+					confirm: true,
+					expenseId: 9001,
+					data: Buffer.from("x").toString("base64"),
+					name: "receipt.pdf",
+				},
+				auth,
+			);
+			expect(locked.success).toBe(false);
+			expect(locked.error).toContain("not editable");
+		});
 	});
 
 	describe("MCP Server Protocol", () => {
@@ -829,7 +920,9 @@ describe("Unanet MCP Server Basic Tests", () => {
 						"unanet_get_personal_development_fund_status",
 					);
 					expect(toolNames).toContain("unanet_get_my_expenses");
+					expect(toolNames).toContain("unanet_get_expense_attachments");
 					expect(toolNames).not.toContain("unanet_update_timesheet");
+					expect(toolNames).not.toContain("unanet_add_expense_attachment");
 					expect(toolNames).not.toContain("unanet_update_project_budget");
 					expect(toolNames).not.toContain("unanet_create_expense_report_draft");
 					resolve();

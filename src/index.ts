@@ -42,6 +42,8 @@ import {
 	createExpenseReportDraftTool,
 	addExpenseDetailTool,
 	validateExpenseReportTool,
+	getExpenseAttachmentsTool,
+	addExpenseAttachmentTool,
 } from "./tools/expenses.js";
 import {
 	createContactTool,
@@ -131,6 +133,7 @@ const readOnlyTools = [
 	getMyExpenseReportTool,
 	getExpenseReferenceDataTool,
 	validateExpenseReportTool,
+	getExpenseAttachmentsTool,
 ];
 
 const legacyReadTools = [
@@ -152,6 +155,7 @@ const mutatingTools = [
 	submitTimesheetForApprovalTool,
 	createExpenseReportDraftTool,
 	addExpenseDetailTool,
+	addExpenseAttachmentTool,
 	approveTimesheetTool,
 	createContactTool,
 	updateLeadTool,

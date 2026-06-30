@@ -19,6 +19,8 @@ const PORT = Number(process.env.PORT || 3000);
 let timesheetPutCount = 0;
 let nextExpenseKey = 9003;
 let nextExpenseDetailKey = 9101;
+let nextAttachmentKey = 9201;
+const mockAttachments: Record<number, any[]> = {};
 
 const mockExpenses: any[] = [
 	{
@@ -323,6 +325,45 @@ app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
 	);
 	expense.reimbursableAmount = expense.totalExpenses;
 	res.json({ key: detail.key });
+});
+
+app.get("/platform/rest/me/expenses/:id/attachments", (req, res) => {
+	const expense = mockExpenses.find(
+		(item) => item.key === Number(req.params.id),
+	);
+	if (!expense) return res.status(404).json({ error: "Expense not found" });
+	const items = mockAttachments[expense.key] ?? [];
+	res.json({
+		items,
+		page: 1,
+		pageSize: items.length,
+		pageCount: 1,
+		resultCount: items.length,
+	});
+});
+
+app.post("/platform/rest/me/expenses/:id/attachments", (req, res) => {
+	const expense = mockExpenses.find(
+		(item) => item.key === Number(req.params.id),
+	);
+	if (!expense) return res.status(404).json({ error: "Expense not found" });
+	if (expense.status !== "INUSE") {
+		return res.status(400).json({ error: "Expense is not editable" });
+	}
+	const detailId = req.query.detailId ? Number(req.query.detailId) : null;
+	const attachment = {
+		key: nextAttachmentKey++,
+		name: req.body?.name,
+		mimeType: req.body?.mimeType,
+		length: req.body?.length,
+		created: new Date().toISOString(),
+		createdBy: { key: 1, name: "Mock User" },
+		detailKey: detailId,
+		projectKey: expense.expenseProjectAllocations?.[0]?.project?.key ?? null,
+	};
+	(mockAttachments[expense.key] ??= []).push(attachment);
+	expense.attachmentCount = (expense.attachmentCount ?? 0) + 1;
+	res.json({ key: attachment.key });
 });
 
 app.get("/platform/rest/me/expenses/:id/validate", (req, res) => {
