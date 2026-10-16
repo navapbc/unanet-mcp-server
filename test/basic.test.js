@@ -527,6 +527,23 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
 		});
 
+		it("should refuse when a full page of results leaves more possible", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			// 25 sheets for other periods: a covering sheet could be on a later page.
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-03-20", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({ success: false, created: false });
+			expect(result.error).toContain("25 or more timesheets");
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
 		it("should load the sheet when the search result carries no period", async () => {
 			const { createTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"

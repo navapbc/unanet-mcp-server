@@ -501,6 +501,13 @@ const MULTI_RESULT_SEARCHES: Record<string, object[]> = {
 		{ key: 217, status: "INUSE", beginDate: "2026-09-01", endDate: "2026-09-15" },
 	],
 	"2026-08-10": [{ key: 215, status: "INUSE" }],
+	// A full page of sheets for other periods: more results may exist.
+	"2026-03-20": Array.from({ length: 25 }, (_unused, index) => ({
+		key: 300 + index,
+		status: "INUSE",
+		beginDate: "2026-01-01",
+		endDate: "2026-01-15",
+	})),
 };
 
 function mockTimesheetPeriod(date: string): {

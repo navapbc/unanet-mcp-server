@@ -304,6 +304,10 @@ function isDuplicate(existingTimeslip: any, newTimeslip: any): boolean {
 	);
 }
 
+// How many search results the create preflight inspects. A full page means
+// there may be more, so the tool refuses rather than guess.
+const CREATE_PREFLIGHT_PAGE_SIZE = 25;
+
 async function searchTimesheets(
 	client: UnanetClient,
 	workDate: string,
@@ -597,7 +601,12 @@ export const createTimesheetTool = {
 			// Search can return sheets for other periods, so look at every
 			// result: refuse if any covers the date, fail closed if any period
 			// cannot be determined, and create only when none does.
-			for (const candidate of await searchTimesheets(client, args.date, 25)) {
+			const results = await searchTimesheets(
+				client,
+				args.date,
+				CREATE_PREFLIGHT_PAGE_SIZE,
+			);
+			for (const candidate of results) {
 				const candidateKey = numericKey(candidate?.key ?? candidate?.id);
 				if (!candidateKey) continue;
 				let sheet = candidate;
@@ -622,6 +631,13 @@ export const createTimesheetTool = {
 						timesheetKey: candidateKey,
 					};
 				}
+			}
+			if (results.length >= CREATE_PREFLIGHT_PAGE_SIZE) {
+				return {
+					success: false,
+					created: false,
+					error: `Unanet returned ${CREATE_PREFLIGHT_PAGE_SIZE} or more timesheets for ${args.date}, so an existing one for that period cannot be ruled out and none was created. Check Unanet.`,
+				};
 			}
 
 			let createResponse;
