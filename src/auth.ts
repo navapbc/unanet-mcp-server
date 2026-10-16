@@ -254,7 +254,14 @@ function handleApiError(error: any): never {
 					method,
 				);
 			default:
-				throw apiError(`API error: ${status} ${statusText}${detail}`, status, method);
+				// Client errors (400, 409, 422...) carry Unanet's code and description, which
+				// explain a rejected request. Server errors (5xx) stay generic: their
+				// descriptions are for Unanet support staff.
+				throw apiError(
+					`API error: ${status} ${statusText}${status < 500 ? detail : ""}`,
+					status,
+					method,
+				);
 		}
 	}
 

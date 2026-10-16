@@ -170,7 +170,10 @@ app.get("/platform/rest/__test/unauthorized", (_req, res) =>
 	res.status(401).json({ errors: [{ code: "UNAUTHORIZED", description: "Session expired" }] }),
 );
 app.all("/platform/rest/__test/service-unavailable", (_req, res) =>
-	res.status(503).json({ error: "Service unavailable" }),
+	res.status(503).json({
+		error: "Service unavailable",
+		errors: [{ code: "UNAVAILABLE", description: "internal detail for support staff" }],
+	}),
 );
 
 // One-shot fault for the next mutating request to any route registered after
