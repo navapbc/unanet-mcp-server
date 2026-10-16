@@ -447,6 +447,16 @@ describe("Unanet MCP Server Basic Tests", () => {
 				"../dist/tools/timesheet.js"
 			);
 
+			// No second-half sheet exists yet; the fixtures cover January 1-15 only.
+			const { getMyTimesheetProjectsTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const beforeCreate = await getMyTimesheetProjectsTool.handler(
+				{ date: "2026-01-20" },
+				createAuth,
+			);
+			expect(beforeCreate.success).toBe(false);
+			expect(beforeCreate.error).toContain("No existing timesheet");
 			const result = await createTimesheetTool.handler(
 				{ date: "2026-01-20", confirm: true },
 				createAuth,

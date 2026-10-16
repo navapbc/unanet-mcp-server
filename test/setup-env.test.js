@@ -36,6 +36,8 @@ describe("setup-mac.sh dotenv_quote", () => {
 		"trail\\n",
 		"$HOME and ${X}",
 		"plain",
+		'a"b\'c',
+		"tick`\\n",
 	])("round-trips %j through dotenv", (value) => {
 		const result = quote(value);
 		expect(result.status).toBe(0);
