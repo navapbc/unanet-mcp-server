@@ -97,7 +97,7 @@ Claude doesn't recognize Unanet commands
 
 3. **Check Environment Variables:**
    - Credentials belong only in `.env`; the Claude config must not contain them
-   - If your password contains `#` or a space, wrap it in single quotes in `.env`: `UNANET_PASSWORD='p#ss word'`
+   - If your password contains `#`, or starts or ends with a space, wrap it in single quotes in `.env`: `UNANET_PASSWORD='p#ss word'` (backticks if it also contains a single quote)
 
 4. **Test the Server Directly:**
    Open Command Prompt and run:

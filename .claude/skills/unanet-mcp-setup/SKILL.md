@@ -60,7 +60,7 @@ The two installers behave differently. Describe only the one that matches their 
 
 The script installs dependencies, builds, backs up `claude_desktop_config.json`, and adds a `unanet` entry that starts the server *from the repo folder* (that's why it uses `bash -lc "cd … && node dist/index.js"` — the server reads `.env` from its working directory). The Claude config never contains the password.
 
-**Windows:** double-click `setup-windows.bat`. It asks no questions about credentials or tools. It installs dependencies, builds, copies `.env.example` to `.env`, and opens Notepad: the user fills in `UNANET_USERNAME` and `UNANET_PASSWORD`, saves, and closes. In that copied file the extra read tools and the write tools are both **off**; to turn either on they edit `.env`. The script does not restrict the file's permissions, so it is plaintext on disk; tell them to treat it like their password. If the password contains `#` or a space, it must be wrapped in single quotes in `.env` (`UNANET_PASSWORD='p#ss'`), or the value is cut off. The script then backs up and updates `claude_desktop_config.json` with a `unanet` entry that starts the server from the repo folder (`cmd.exe /c "cd /d <repo> && node dist\index.js"`). The Claude config never contains the password.
+**Windows:** double-click `setup-windows.bat`. It asks no questions about credentials or tools. It installs dependencies, builds, copies `.env.example` to `.env`, and opens Notepad: the user fills in `UNANET_USERNAME` and `UNANET_PASSWORD`, saves, and closes. In that copied file the extra read tools and the write tools are both **off**; to turn either on they edit `.env`. The script does not restrict the file's permissions, so it is plaintext on disk; tell them to treat it like their password. If the password contains `#`, or starts or ends with a space, it must be wrapped in single quotes in `.env` (`UNANET_PASSWORD='p#ss'`), or the value is cut off; if it also contains a single quote, wrap it in backticks instead. The script then backs up and updates `claude_desktop_config.json` with a `unanet` entry that starts the server from the repo folder (`cmd.exe /c "cd /d <repo> && node dist\index.js"`). The Claude config never contains the password.
 
 In Mode A you may run `npm install && npm run build` yourself first so the script's build step is quick, but still hand the script itself to the user for the credential prompts. Never write a password into `.env` on their behalf, and if they paste one into chat, tell them to change it.
 
@@ -77,8 +77,8 @@ Mode A: you can also confirm the server boots by running `node dist/index.js` fr
 Close with a short summary, every time:
 
 - What's installed and where (the repo path).
-- Where the credentials live (`<repo>/.env`, local only, plaintext, mode 600) and that the Claude config only has the launch command.
-- What the connector can do right now: read their own leave, expenses, approvals, and My Projects. Their own timesheets, plus project and billing reads, only if the extra read tools are on (default on macOS, off on Windows). Writes are off unless they enabled them.
+- Where the credentials live (`<repo>/.env`, local only, plaintext; mode 600 on macOS, default file permissions on Windows) and that the Claude config only has the launch command.
+- What the connector can do right now: read their own leave balances, expense reports (including validation and attachments), and personal-development fund status. Their own timesheets, plus project and billing reads, only if the extra read tools are on (default on macOS, off on Windows). Writes are off unless they enabled them.
 - How to turn it off: remove the `unanet` block from `claude_desktop_config.json` and restart Claude Desktop; delete the folder to remove the credentials.
 - Who to ask: Billy Hunt for connector problems, Finance (Sharma Scatliffe) for Unanet permission problems.
 
@@ -90,7 +90,7 @@ Read the actual error before guessing. These cover nearly everything:
 |---|---|---|
 | Unanet tools don't appear in Claude Desktop | Claude didn't launch the server | Was Claude fully quit and reopened? Is the JSON in `claude_desktop_config.json` valid (a trailing comma breaks it)? Does `dist/index.js` exist (`npm run build`)? Check Claude Desktop → Settings → Developer → MCP logs |
 | `UNANET_USERNAME environment variable is required` in logs | server started outside the repo folder or `.env` missing | the config command must `cd` into the repo before `node dist/index.js` |
-| **401** / "Authentication failed" | wrong username, password, or base URL | log into the Unanet website with the same credentials; check `.env` for typos (a password containing `#` or a space must be wrapped in single quotes, or it is cut off); base URL must be the origin only, no `/platform/rest` |
+| **401** / "Authentication failed" | wrong username, password, or base URL | log into the Unanet website with the same credentials; check `.env` for typos (a password containing `#` is cut off unless wrapped in single quotes, or backticks if it contains a single quote); base URL must be the origin only, no `/platform/rest` |
 | **403** | login worked; their Unanet account lacks that permission | Not a connector problem. Note what they tried and ask Finance whether they should have it. Don't work around it |
 | Leave balances work but projects/timesheets don't show | extra read tools disabled | set `UNANET_ENABLE_LEGACY_READ_TOOLS=true` in `.env` (name is historical), restart Claude Desktop |
 | Windows "Access Denied" during setup | permissions / corporate policy | do **not** disable antivirus; stop and get IT or Billy |

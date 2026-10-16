@@ -559,7 +559,7 @@ const createTimesheetInputSchema = z.object({
 		.string()
 		.refine(isValidIsoDate, "date must be a valid YYYY-MM-DD date")
 		.describe(
-			"Any date in the desired timesheet period. Prefer the period start date.",
+			"Date to start the requested timesheet; use the intended period start. The result reports Unanet's actual period and whether it contains this date.",
 		),
 	confirm: z
 		.literal(true)

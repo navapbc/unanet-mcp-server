@@ -47,9 +47,11 @@ interface MockTimesheet {
 }
 
 const createdTimesheets = new Map<number, MockTimesheet>();
-// Search returns only created timesheets for workDates before this day. From
-// this day on, the seeded fixture sheets (201-204, 211) answer.
+// The seeded fixture sheets (201-204) answer searches only for workDates in
+// this window. Outside it, search returns created timesheets only, so any
+// ordinary period can be created. Fixture 211 is a separate dated case below.
 const SEEDED_TIMESHEETS_START = "2026-01-01";
+const SEEDED_TIMESHEETS_END = "2026-01-31";
 
 const mockExpenses: any[] = [
 	{
@@ -541,7 +543,7 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 		(timesheet) =>
 			workDate >= timesheet.beginDate && workDate <= timesheet.endDate,
 	);
-	if (created.length > 0 || workDate < SEEDED_TIMESHEETS_START) {
+	if (created.length > 0) {
 		return res.json({ items: created });
 	}
 	// Unanet returns null for fields it does not populate and nests the period
@@ -559,6 +561,9 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 				},
 			],
 		});
+	}
+	if (workDate < SEEDED_TIMESHEETS_START || workDate > SEEDED_TIMESHEETS_END) {
+		return res.json({ items: [] });
 	}
 	const key = SEARCH_KEY_BY_DATE[workDate] ?? 201;
 	res.json({

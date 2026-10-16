@@ -412,6 +412,36 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(result.warning).toBeUndefined();
 		});
 
+		it("should not class a failed login as an unknown write outcome", async () => {
+			const { isOutcomeUnknown } = await import("../dist/auth.js");
+			const client = createUnanetClient({ ...createAuth, username: "wrong-user" });
+
+			const error = await client
+				.post("/me/time", { date: "2025-06-03" })
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(Error);
+			expect(isOutcomeUnknown(error)).toBe(false);
+		});
+
+		it("should create a timesheet for an ordinary recent period the seeded fixtures do not cover", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-10-15", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2026-10-01", endDate: "2026-10-15" },
+			});
+		});
+
 		it("should flag, not fail, a create response with no key", async () => {
 			const { createTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"

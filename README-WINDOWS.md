@@ -65,7 +65,7 @@ Node.js is required to run the Unanet connector.
    UNANET_BASE_URL=https://navapbc.unanet.biz
    ```
    - Replace the username and password with your normal Unanet login; leave the URL alone
-   - If your password contains `#` or a space, put single quotes around it: `UNANET_PASSWORD='p#ss word'`. Without them the password is cut off and login fails.
+   - If your password contains `#`, or starts or ends with a space, put single quotes around it: `UNANET_PASSWORD='p#ss word'`. Without them the password is cut off or trimmed and login fails. If it also contains a single quote, use backticks instead.
    - **Save the file** (Ctrl+S) and close Notepad
 
 5. **Claude Desktop is configured for you**:
