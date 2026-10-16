@@ -26,6 +26,7 @@ import {
 	getProjectStatusTool,
 } from "./tools/projects.js";
 import {
+	createTimesheetTool,
 	updateTimesheetTool,
 	editTimeslipTool,
 	deleteTimeslipTool,
@@ -146,6 +147,7 @@ const legacyReadTools = [
 ];
 
 const mutatingTools = [
+	createTimesheetTool,
 	updateProjectBudgetTool,
 	updateTimesheetTool,
 	editTimeslipTool,

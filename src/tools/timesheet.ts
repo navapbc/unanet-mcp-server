@@ -1,5 +1,57 @@
 import { z } from "zod";
-import { type UnanetAuth, createUnanetClient } from "../auth.js";
+import {
+	type UnanetAuth,
+	type UnanetClient,
+	createUnanetClient,
+} from "../auth.js";
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const timesheetRecordSchema = z
+	.object({
+		key: z.coerce.number().int().positive().optional(),
+		id: z.coerce.number().int().positive().optional(),
+		beginDate: z.string().optional(),
+		endDate: z.string().optional(),
+		status: z.unknown().optional(),
+	})
+	.passthrough();
+
+const timesheetReferenceSchema = timesheetRecordSchema
+	.refine((value) => value.key !== undefined || value.id !== undefined, {
+		message: "Timesheet reference must include key or id",
+	})
+	.transform((value) => {
+		const key = value.key ?? value.id;
+		if (key === undefined) {
+			throw new Error("Timesheet reference must include key or id");
+		}
+		return { ...value, key };
+	});
+
+const createdTimesheetSchema = timesheetRecordSchema.extend({
+	periodStart: z.string().optional(),
+	periodEnd: z.string().optional(),
+	timePeriod: z
+		.object({
+			beginDate: z.string().optional(),
+			endDate: z.string().optional(),
+		})
+		.passthrough()
+		.optional(),
+});
+
+const createTimesheetResponseSchema = z
+	.object({
+		key: z.coerce.number().int().positive().optional(),
+		message: z
+			.object({
+				key: z.coerce.number().int().positive().optional(),
+			})
+			.passthrough()
+			.optional(),
+	})
+	.passthrough();
 
 function itemsFromResponse<T>(data: any): T[] {
 	if (Array.isArray(data)) return data;
@@ -67,6 +119,18 @@ function formatDate(date = new Date()): string {
 	const month = String(date.getMonth() + 1).padStart(2, "0");
 	const day = String(date.getDate()).padStart(2, "0");
 	return `${year}-${month}-${day}`;
+}
+
+function isValidIsoDate(value: string): boolean {
+	if (!ISO_DATE_PATTERN.test(value)) {
+		return false;
+	}
+
+	const parsed = new Date(`${value}T00:00:00.000Z`);
+	return (
+		!Number.isNaN(parsed.getTime()) &&
+		parsed.toISOString().slice(0, 10) === value
+	);
 }
 
 function numericKey(value: unknown): number | undefined {
@@ -285,13 +349,24 @@ function isDuplicate(existingTimeslip: any, newTimeslip: any): boolean {
 	);
 }
 
-async function findTimesheet(client: any, workDate: string): Promise<any> {
+async function searchTimesheet(
+	client: UnanetClient,
+	workDate: string,
+): Promise<z.infer<typeof timesheetReferenceSchema> | undefined> {
 	const search = await client.post(
 		"/me/time/search",
 		{ workDate },
 		{ params: { page: 1, pageSize: 1 } },
 	);
-	const existing = itemsFromResponse<any>(search.data)[0];
+	const first = itemsFromResponse<unknown>(search.data)[0];
+	return first === undefined ? undefined : timesheetReferenceSchema.parse(first);
+}
+
+async function findTimesheet(
+	client: UnanetClient,
+	workDate: string,
+): Promise<z.infer<typeof timesheetReferenceSchema>> {
+	const existing = await searchTimesheet(client, workDate);
 	if (existing?.key ?? existing?.id) {
 		return existing;
 	}
@@ -524,6 +599,131 @@ function selectTimeslips(
 	}
 	return { matches };
 }
+
+const createTimesheetInputSchema = z.object({
+	date: z
+		.string()
+		.refine(isValidIsoDate, "date must be a valid YYYY-MM-DD date")
+		.describe(
+			"Any date in the desired timesheet period. Prefer the period start date.",
+		),
+	confirm: z
+		.literal(true)
+		.describe("Must be true to confirm this live timesheet creation."),
+});
+
+// Create an empty timesheet for the period containing the requested date.
+export const createTimesheetTool = {
+	name: "unanet_create_timesheet",
+	description:
+		"Create an empty in-progress Unanet timesheet for the period containing a date. Refuses to create a duplicate or a future-period sheet, adds no time entries, and requires confirm=true.",
+	inputSchema: createTimesheetInputSchema,
+	handler: async (rawArgs: unknown, auth: UnanetAuth) => {
+		const args = createTimesheetInputSchema.parse(rawArgs);
+		if (args.confirm !== true) {
+			return {
+				success: false,
+				created: false,
+				error: "confirm=true is required before creating a timesheet.",
+			};
+		}
+		if (args.date > formatDate()) {
+			return {
+				success: false,
+				created: false,
+				error: `Refusing to create a future timesheet for ${args.date}.`,
+			};
+		}
+
+		const client = createUnanetClient(auth);
+		try {
+			const existing = await searchTimesheet(client, args.date);
+			const existingKey = numericKey(existing?.key ?? existing?.id);
+			if (existingKey) {
+				return {
+					success: false,
+					created: false,
+					error: `A timesheet already exists for the period containing ${args.date}.`,
+					timesheetKey: existingKey,
+				};
+			}
+
+			const createResponse = await client.post("/me/time", {
+				date: args.date,
+			});
+			const createResult = createTimesheetResponseSchema.parse(
+				createResponse.data,
+			);
+			const createdKey = numericKey(
+				createResult.key ?? createResult.message?.key,
+			);
+			if (!createdKey) {
+				return {
+					success: true,
+					created: true,
+					verified: false,
+					warning:
+						"Unanet accepted the create request but returned no timesheet key. Search the period before retrying so a duplicate is not created.",
+				};
+			}
+
+			try {
+				const created = createdTimesheetSchema.parse(
+					await getTimesheet(client, { key: createdKey }),
+				);
+				const periodStart =
+					created.beginDate ??
+					created.periodStart ??
+					created.timePeriod?.beginDate ??
+					null;
+				const periodEnd =
+					created.endDate ??
+					created.periodEnd ??
+					created.timePeriod?.endDate ??
+					null;
+				const verified =
+					periodStart !== null &&
+					periodEnd !== null &&
+					args.date >= periodStart &&
+					args.date <= periodEnd;
+
+				return {
+					success: true,
+					created: true,
+					verified,
+					timesheetKey: createdKey,
+					period: {
+						startDate: periodStart,
+						endDate: periodEnd,
+					},
+					status: created.status ?? null,
+					...(verified
+						? {}
+						: {
+								warning:
+									"Timesheet was created, but its returned period could not be verified against the requested date.",
+							}),
+				};
+			} catch (error: unknown) {
+				const message =
+					error instanceof Error ? error.message : String(error);
+				return {
+					success: true,
+					created: true,
+					verified: false,
+					timesheetKey: createdKey,
+					warning: `Timesheet was created, but read-back verification failed: ${message}`,
+				};
+			}
+		} catch (error: unknown) {
+			return {
+				success: false,
+				created: false,
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
+	},
+};
 
 // Submit timesheet tool
 export const updateTimesheetTool = {

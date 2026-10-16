@@ -257,6 +257,69 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(result.projects[0].projectCode).toBe("PRJ-001");
 		});
 
+		it("should create one empty timesheet and refuse a duplicate period", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const auth = {
+				username: "test-user",
+				password: "test-pass",
+				baseUrl: MOCK_BASE_URL,
+			};
+
+			const created = await createTimesheetTool.handler(
+				{ date: "2025-12-16", confirm: true },
+				auth,
+			);
+			expect(created).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				timesheetKey: 205,
+				period: {
+					startDate: "2025-12-16",
+					endDate: "2025-12-31",
+				},
+				status: "INUSE",
+			});
+
+			const duplicate = await createTimesheetTool.handler(
+				{ date: "2025-12-20", confirm: true },
+				auth,
+			);
+			expect(duplicate).toMatchObject({
+				success: false,
+				created: false,
+				timesheetKey: 205,
+			});
+			expect(duplicate.error).toContain("already exists");
+
+			const { count } = await (
+				await fetch(`${MOCK_BASE_URL}/platform/rest/__test/timesheet-create-count`)
+			).json();
+			expect(count).toBe(1);
+		});
+
+		it("should refuse to create a future timesheet", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const result = await createTimesheetTool.handler(
+				{ date: "2999-01-01", confirm: true },
+				{
+					username: "test-user",
+					password: "test-pass",
+					baseUrl: MOCK_BASE_URL,
+				},
+			);
+
+			expect(result).toMatchObject({
+				success: false,
+				created: false,
+			});
+			expect(result.error).toContain("future timesheet");
+		});
+
 		it("should add confirmed Platform REST timesheet entries", async () => {
 			const { updateTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
@@ -1007,6 +1070,46 @@ describe("Unanet MCP Server Basic Tests", () => {
 
 				serverProcess.stdin.write(JSON.stringify(listToolsRequest) + "\n");
 			});
+		});
+
+		it("should advertise timesheet creation when write tools are enabled", async () => {
+			const writeServerProcess = spawn("node", ["dist/index.js"], {
+				env: {
+					...process.env,
+					UNANET_USERNAME: "test-user",
+					UNANET_PASSWORD: "test-pass",
+					UNANET_BASE_URL: MOCK_BASE_URL,
+					UNANET_ALLOW_INSECURE_LOCAL_MOCK: "true",
+					UNANET_ENABLE_LEGACY_READ_TOOLS: "false",
+					UNANET_ENABLE_WRITE_TOOLS: "true",
+				},
+			});
+
+			try {
+				await new Promise((resolve) => setTimeout(resolve, 250));
+				const response = await new Promise((resolve, reject) => {
+					const timer = setTimeout(
+						() => reject(new Error("Timed out waiting for tools/list")),
+						3000,
+					);
+					writeServerProcess.stdout.once("data", (data) => {
+						clearTimeout(timer);
+						resolve(JSON.parse(data.toString()));
+					});
+					writeServerProcess.stdin.write(
+						`${JSON.stringify({
+							jsonrpc: "2.0",
+							method: "tools/list",
+							params: {},
+							id: 1,
+						})}\n`,
+					);
+				});
+				const toolNames = response.result.tools.map((tool) => tool.name);
+				expect(toolNames).toContain("unanet_create_timesheet");
+			} finally {
+				writeServerProcess.kill();
+			}
 		});
 
 		it("should not list legacy resources in safe read-only mode", async () => {

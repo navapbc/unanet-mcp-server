@@ -23,6 +23,19 @@ let nextExpenseKey = 9003;
 let nextExpenseDetailKey = 9101;
 let nextAttachmentKey = 9201;
 const mockAttachments: Record<number, any[]> = {};
+let timesheetCreateCount = 0;
+let nextTimesheetKey = 205;
+
+interface MockTimesheet {
+	key: number;
+	beginDate: string;
+	endDate: string;
+	status: string;
+	timeslips: unknown[];
+}
+
+const createdTimesheets = new Map<number, MockTimesheet>();
+const CREATE_TIMESHEET_TEST_DATE = "2025-12-16";
 
 const mockExpenses: any[] = [
 	{
@@ -445,8 +458,59 @@ const SEARCH_KEY_BY_DATE: Record<string, number> = {
 	"2026-01-04": 204,
 };
 
+function mockTimesheetPeriod(date: string): {
+	beginDate: string;
+	endDate: string;
+} {
+	const [year, month, day] = date.split("-").map(Number);
+	const monthText = String(month).padStart(2, "0");
+	if (day <= 15) {
+		return {
+			beginDate: `${year}-${monthText}-01`,
+			endDate: `${year}-${monthText}-15`,
+		};
+	}
+
+	const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+	return {
+		beginDate: `${year}-${monthText}-16`,
+		endDate: `${year}-${monthText}-${String(endDay).padStart(2, "0")}`,
+	};
+}
+
+app.post("/platform/rest/me/time", (req, res) => {
+	const date = req.body?.date;
+	if (typeof date !== "string") {
+		return res.status(400).json({ error: "date required" });
+	}
+	const existing = [...createdTimesheets.values()].find(
+		(timesheet) => date >= timesheet.beginDate && date <= timesheet.endDate,
+	);
+	if (existing) {
+		return res.status(409).json({ error: "Timesheet already exists" });
+	}
+
+	const key = nextTimesheetKey++;
+	const period = mockTimesheetPeriod(date);
+	createdTimesheets.set(key, {
+		key,
+		...period,
+		status: "INUSE",
+		timeslips: [],
+	});
+	timesheetCreateCount += 1;
+	return res.json({ key });
+});
+
 app.post("/platform/rest/me/time/search", (req, res) => {
 	const workDate = req.body?.workDate;
+	const created = [...createdTimesheets.values()].filter(
+		(timesheet) =>
+			workDate >= timesheet.beginDate && workDate <= timesheet.endDate,
+	);
+	if (created.length > 0 || workDate === CREATE_TIMESHEET_TEST_DATE) {
+		return res.json({ items: created });
+	}
 	const key = SEARCH_KEY_BY_DATE[workDate] ?? 201;
 	res.json({
 		items: [
@@ -463,6 +527,10 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 
 app.get("/platform/rest/me/time/:id", (req, res) => {
 	const key = Number(req.params.id);
+	const created = createdTimesheets.get(key);
+	if (created) {
+		return res.json(created);
+	}
 	res.json({
 		key,
 		beginDate: "2026-01-01",
@@ -521,6 +589,10 @@ app.get("/platform/rest/__test/put-count", (_req, res) => {
 app.post("/platform/rest/__test/reset-put-count", (_req, res) => {
 	timesheetPutCount = 0;
 	res.json({ count: timesheetPutCount });
+});
+
+app.get("/platform/rest/__test/timesheet-create-count", (_req, res) => {
+	res.json({ count: timesheetCreateCount });
 });
 
 app.get("/platform/rest/me/time/:id/validate", (req, res) => {
