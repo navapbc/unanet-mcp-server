@@ -1147,6 +1147,27 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(detail.detailId).toBeGreaterThan(0);
 			expect(detail.message).toContain("Review and submit manually");
 
+			// Plain expense types (parking, baggage, tolls...) have no wizard.
+			const plainArgs = addExpenseDetailTool.inputSchema.parse({
+				confirm: true,
+				expenseId: draft.expenseId,
+				expenseDate: "2026-06-02",
+				expenseTypeKey: 46,
+				paymentMethodKey: 401,
+				transactionCurrency: 1,
+				amount: 12.5,
+				projectAllocationKey: 7100,
+				summary: "Parking",
+				validateAfterAdd: false,
+			});
+			const plain = await addExpenseDetailTool.handler(plainArgs, auth);
+			expect(plain.success).toBe(true);
+			const stored = (
+				await createUnanetClient(auth).get(`/me/expenses/${draft.expenseId}`)
+			).data.expenseDetails.find((line) => line.key === plain.detailId);
+			expect(stored.summary).toBe("Parking");
+			expect("wizard" in stored).toBe(false);
+
 			const validation = await validateExpenseReportTool.handler(
 				{ expenseId: draft.expenseId },
 				auth,

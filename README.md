@@ -273,7 +273,7 @@ Attachment tools that take a local `filePath` or `saveTo` only accept ordinary d
 | `unanet_create_expense_report_draft` | Create a draft Unanet expense report shell. This writes to Unanet and never submits the report. |
 | `unanet_update_expense_report` | Update the purpose, location and/or project allocations of one of your DRAFT Unanet expense reports. Allocations, when provided, replace the existing set and must total 100. Never submits. Requires confirm: true. |
 | `unanet_delete_expense_report` | Delete one of your DRAFT (INUSE/DISAPPROVED) Unanet expense reports, including its lines and attachments. Irreversible. Refuses when the report has lines unless allowNonEmpty=true. Requires confirm: true. |
-| `unanet_add_expense_detail` | Add a line item to a draft Unanet expense report. This writes to Unanet and never submits the report. |
+| `unanet_add_expense_detail` | Add a line item to a draft Unanet expense report. This writes to Unanet and never submits the report. `wizard` is only needed for expense types whose reference data lists a `wizardType` (airfare, per-diem lodging and meals, mileage, business meals); omit it for plain types such as parking, baggage fees, tolls, taxi or office supplies. |
 | `unanet_update_expense_detail` | Update fields on one line item of one of your DRAFT Unanet expense reports. Only provided fields change; the tool reads the current line, merges, and PUTs the full model back. Never submits. Requires confirm: true. |
 | `unanet_delete_expense_detail` | Delete one line item from one of your DRAFT Unanet expense reports. Irreversible. Requires confirm: true. |
 | `unanet_add_expense_attachment` | Upload a receipt to a draft Unanet expense report. Provide either a local filePath or inline base64 data. Optionally associate it with a specific line via detailId. This writes to Unanet and never submits the report. |
@@ -338,7 +338,7 @@ npm run build-catalog   # regenerate spec/api-catalog.json + spec/api-schemas.js
 npm run smoke:readonly  # live READ-ONLY smoke test against the tenant in .env (invokes read handlers only; never writes)
 ```
 
-Live verification: an earlier version of this code (before the hardening in this repository) was reported to return real data for the self-service reads in August 2026 on a non-admin Nava account; org-level reads returned 403 for that account. That report is carried over from the fork's notes, has no saved evidence here, and does not cover the current code. Treat every tool as mock-verified only until you have run `npm run smoke:readonly` yourself. Write tools have only been exercised against the mock server.
+Live verification: an earlier version of this code (before the hardening in this repository) was reported to return real data for the self-service reads in August 2026 on a non-admin Nava account; org-level reads returned 403 for that account. That report is carried over from the fork's notes, has no saved evidence here, and does not cover the current code. Treat every tool as mock-verified only until you have run `npm run smoke:readonly` yourself. Write tools have been exercised against the mock server, with one exception: on 2026-10-16 `unanet_add_expense_detail` without `wizard` (a Travel-Parking line) and `unanet_delete_expense_detail` were run once against a real draft report on the Nava tenant; Unanet accepted the plain line and the line was deleted again with the report total unchanged.
 
 Project layout:
 

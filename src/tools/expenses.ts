@@ -787,9 +787,11 @@ export const addExpenseDetailTool = {
 		vendorName: z.string().optional(),
 		receiptIncluded: z.boolean().optional(),
 		noReceiptReason: z.string().optional(),
-		wizard: wizardSchema.describe(
-			"Unanet expense wizard payload, including a discriminator `type`.",
-		),
+		wizard: wizardSchema
+			.optional()
+			.describe(
+				"Unanet expense wizard payload, including a discriminator `type` (AIR, LODGING_PER_DIEM, MIE_PER_DIEM, MILEAGE, EMP_BUS_MTG...). Required only for expense types whose reference-data wizardType is set; omit it for plain types such as parking, baggage, tolls, taxi or office supplies.",
+			),
 		validateAfterAdd: z.boolean().optional().default(true),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
@@ -823,7 +825,7 @@ export const addExpenseDetailTool = {
 				vendorName: args.vendorName,
 				receiptIncluded: args.receiptIncluded,
 				noReceiptReason: args.noReceiptReason,
-				wizard: args.wizard,
+				...(args.wizard ? { wizard: args.wizard } : {}),
 			};
 			const response = await client.post(
 				`/me/expenses/${args.expenseId}/details`,
