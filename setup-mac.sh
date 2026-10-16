@@ -74,7 +74,7 @@ write_env_file() {
 		echo
 	done
 
-	if ask_yes_no "Enable extra read tools like projects and timesheets?" "Y"; then
+	if ask_yes_no "Enable org-level read tools (projects, people, organizations, contracts, invoices)?" "N"; then
 		enable_reads="true"
 	else
 		enable_reads="false"
@@ -100,7 +100,7 @@ UNANET_PASSWORD=$password_env
 UNANET_APP_NAME=$DEFAULT_APP_NAME
 
 # Extra tool surfaces. Defaults are safe.
-UNANET_ENABLE_LEGACY_READ_TOOLS=$enable_reads
+UNANET_ENABLE_EXTENDED_READ_TOOLS=$enable_reads
 UNANET_ENABLE_WRITE_TOOLS=$enable_writes
 
 # Local mock testing only. Never enable for production URLs.

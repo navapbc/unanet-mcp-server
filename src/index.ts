@@ -36,6 +36,18 @@ import {
 	approveTimesheetTool,
 } from "./tools/timesheet.js";
 import {
+	getTimePeriodsTool,
+	listMyTimesheetsTool,
+	getTimesheetHistoryTool,
+	getTimesheetAdjustmentsTool,
+	getTimesheetAttachmentsTool,
+	getTimesheetAttachmentTool,
+	deleteTimesheetTool,
+	addTimesheetAttachmentTool,
+	deleteTimesheetAttachmentTool,
+	setTimesheetAdjustmentReasonsTool,
+} from "./tools/timesheet-lifecycle.js";
+import {
 	getMyExpensesTool,
 	getPersonalDevelopmentFundStatusTool,
 	getMyExpenseReportTool,
@@ -47,6 +59,51 @@ import {
 	addExpenseAttachmentTool,
 } from "./tools/expenses.js";
 import {
+	updateExpenseReportTool,
+	deleteExpenseReportTool,
+	getExpenseDetailTool,
+	updateExpenseDetailTool,
+	deleteExpenseDetailTool,
+	getExpenseHistoryTool,
+	getExpenseMealCapsTool,
+	getExpenseAttachmentTool,
+	deleteExpenseAttachmentTool,
+	getApprovedExpenseRequestsTool,
+	searchImportedExpensesTool,
+	addImportedExpenseToReportTool,
+	submitExpenseReportTool,
+} from "./tools/expense-lifecycle.js";
+import { getMyLeaveBalancesTool } from "./tools/leave.js";
+import {
+	getMyLeaveRequestsTool,
+	getLeaveRequestHistoryTool,
+	createLeaveRequestTool,
+	updateLeaveRequestTool,
+	submitLeaveRequestTool,
+	cancelLeaveRequestTool,
+	deleteLeaveRequestTool,
+} from "./tools/leave-requests.js";
+import {
+	getMyPendingApprovalsTool,
+	getApprovalDetailTool,
+	getApprovalAlternatesTool,
+	approveTool,
+	disapproveTool,
+} from "./tools/approvals.js";
+import { getMyPendingReviewsTool, completeReviewTool } from "./tools/reviews.js";
+import {
+	getMyProjectsListTool,
+	searchAvailableProjectsTool,
+	addToMyProjectsTool,
+	removeFromMyProjectsTool,
+	getMyRatesTool,
+	getMyAlternatesTool,
+	updateMyAlternatesTool,
+	getMyAttachmentsTool,
+	addMyAttachmentTool,
+	deleteMyAttachmentTool,
+} from "./tools/user.js";
+import {
 	createContactTool,
 	updateLeadTool,
 	createOpportunityTool,
@@ -57,7 +114,27 @@ import {
 	generateInvoiceTool,
 	getFinancialReportTool,
 } from "./tools/financials.js";
-import { getMyLeaveBalancesTool } from "./tools/leave.js";
+import {
+	searchPeopleTool,
+	getPersonTool,
+	searchOrganizationsTool,
+	getOrganizationTool,
+	searchContractsTool,
+	getContractTool,
+	getProjectTasksTool,
+	getProjectAssignmentsTool,
+	getProjectNotesTool,
+	getProjectAdminsTool,
+	searchInvoicesTool,
+	getInvoiceTool,
+	getReferenceDataTool,
+	pingTool,
+} from "./tools/directory.js";
+import {
+	searchApiOperationsTool,
+	describeApiOperationTool,
+	apiReadTool,
+} from "./tools/api.js";
 import {
 	projectListResource,
 	timesheetTemplatesResource,
@@ -87,9 +164,12 @@ const server = new Server(
 const allowInsecureLocalMock = isEnabled(
 	process.env.UNANET_ALLOW_INSECURE_LOCAL_MOCK,
 );
-const enableLegacyReadTools = isEnabled(
-	process.env.UNANET_ENABLE_LEGACY_READ_TOOLS,
-);
+// Extended (org-level) reads: projects, people, organizations, contracts,
+// invoices, reference data and the generic spec-driven API reader.
+// UNANET_ENABLE_LEGACY_READ_TOOLS is the original name and still honoured.
+const enableExtendedReadTools =
+	isEnabled(process.env.UNANET_ENABLE_EXTENDED_READ_TOOLS) ||
+	isEnabled(process.env.UNANET_ENABLE_LEGACY_READ_TOOLS);
 const enableWriteTools = isEnabled(process.env.UNANET_ENABLE_WRITE_TOOLS);
 
 function errorMessage(error: unknown): string {
@@ -107,6 +187,7 @@ function loadAuthFromEnv(): UnanetAuth {
 		password: process.env.UNANET_PASSWORD || "",
 		baseUrl: normalizedBaseUrl,
 		appName: process.env.UNANET_APP_NAME || DEFAULT_UNANET_APP_NAME,
+		customerId: process.env.UNANET_CUSTOMER_ID || undefined,
 	};
 }
 
@@ -125,58 +206,145 @@ const auth = (() => {
 	}
 })();
 
-const readOnlyTools = [
+// Tier 1 (default): self-service reads. Everything here is scoped to the
+// authenticated user's own records (or queues they own as an approver).
+const selfServiceReadTools = [
+	// Leave
 	getMyLeaveBalancesTool,
+	getMyLeaveRequestsTool,
+	getLeaveRequestHistoryTool,
+	// Expenses
 	getMyExpensesTool,
 	getPersonalDevelopmentFundStatusTool,
 	getMyExpenseReportTool,
 	getExpenseReferenceDataTool,
 	validateExpenseReportTool,
 	getExpenseAttachmentsTool,
+	getExpenseAttachmentTool,
+	getExpenseDetailTool,
+	getExpenseHistoryTool,
+	getExpenseMealCapsTool,
+	getApprovedExpenseRequestsTool,
+	searchImportedExpensesTool,
+	// Time
+	getTimesheetsTool,
+	listMyTimesheetsTool,
+	getMyTimesheetProjectsTool,
+	getTimePeriodsTool,
+	getTimesheetHistoryTool,
+	getTimesheetAdjustmentsTool,
+	getTimesheetAttachmentsTool,
+	getTimesheetAttachmentTool,
+	// Approvals & reviews (queues addressed to me)
+	getMyPendingApprovalsTool,
+	getApprovalDetailTool,
+	getApprovalAlternatesTool,
+	getMyPendingReviewsTool,
+	// User
+	getMyProjectsListTool,
+	searchAvailableProjectsTool,
+	getMyRatesTool,
+	getMyAlternatesTool,
+	getMyAttachmentsTool,
+	pingTool,
 ];
 
-const legacyReadTools = [
+// Tier 2 (UNANET_ENABLE_EXTENDED_READ_TOOLS / legacy flag): org-level reads.
+const extendedReadTools = [
 	getProjectsTool,
 	getProjectDetailsTool,
 	getProjectStatusTool,
-	getTimesheetsTool,
-	getMyTimesheetProjectsTool,
+	getProjectTasksTool,
+	getProjectAssignmentsTool,
+	getProjectNotesTool,
+	getProjectAdminsTool,
+	searchPeopleTool,
+	getPersonTool,
+	searchOrganizationsTool,
+	getOrganizationTool,
 	getCompanyInfoTool,
+	searchContractsTool,
+	getContractTool,
+	searchInvoicesTool,
+	getInvoiceTool,
 	getBillingStatusTool,
 	getFinancialReportTool,
+	getReferenceDataTool,
+	// Generic spec-driven catalog + reader
+	searchApiOperationsTool,
+	describeApiOperationTool,
+	apiReadTool,
 ];
 
+// Tier 3 (UNANET_ENABLE_WRITE_TOOLS): every write. All require confirm: true.
 const mutatingTools = [
-	createTimesheetTool,
-	updateProjectBudgetTool,
+	// Time
 	updateTimesheetTool,
 	editTimeslipTool,
 	deleteTimeslipTool,
 	submitTimesheetForApprovalTool,
+	createTimesheetTool,
+	deleteTimesheetTool,
+	addTimesheetAttachmentTool,
+	deleteTimesheetAttachmentTool,
+	setTimesheetAdjustmentReasonsTool,
+	// Expenses
 	createExpenseReportDraftTool,
+	updateExpenseReportTool,
+	deleteExpenseReportTool,
 	addExpenseDetailTool,
+	updateExpenseDetailTool,
+	deleteExpenseDetailTool,
 	addExpenseAttachmentTool,
+	deleteExpenseAttachmentTool,
+	addImportedExpenseToReportTool,
+	submitExpenseReportTool,
+	// Leave
+	createLeaveRequestTool,
+	updateLeaveRequestTool,
+	submitLeaveRequestTool,
+	cancelLeaveRequestTool,
+	deleteLeaveRequestTool,
+	// Approvals & reviews
+	approveTool,
+	disapproveTool,
 	approveTimesheetTool,
+	completeReviewTool,
+	// User
+	addToMyProjectsTool,
+	removeFromMyProjectsTool,
+	updateMyAlternatesTool,
+	addMyAttachmentTool,
+	deleteMyAttachmentTool,
+	// Org-level / legacy
+	updateProjectBudgetTool,
 	createContactTool,
 	updateLeadTool,
 	createOpportunityTool,
 	generateInvoiceTool,
 ];
 
-// Tool definitions. Safe mode registers only the read-only Nava leave-balance tool.
+// Tool registration by tier.
 const tools = [
-	...readOnlyTools,
-	...(enableLegacyReadTools ? legacyReadTools : []),
+	...selfServiceReadTools,
+	...(enableExtendedReadTools ? extendedReadTools : []),
 	...(enableWriteTools ? mutatingTools : []),
 ];
 
-// Resource definitions. Additional resources are opt-in with the legacy read flag.
-const resources = enableLegacyReadTools
+const duplicateToolNames = tools
+	.map((tool) => tool.name)
+	.filter((name, index, names) => names.indexOf(name) !== index);
+if (duplicateToolNames.length > 0) {
+	throw new Error(`Duplicate tool names registered: ${duplicateToolNames.join(", ")}`);
+}
+
+// Resource definitions. Additional resources are opt-in with the extended read flag.
+const resources = enableExtendedReadTools
 	? [projectListResource, timesheetTemplatesResource]
 	: [];
 
 console.error(
-	`[${SERVER_NAME}] Registered ${tools.length} tool(s); write tools enabled: ${enableWriteTools}`,
+	`[${SERVER_NAME}] Registered ${tools.length} tool(s); extended reads: ${enableExtendedReadTools}; write tools: ${enableWriteTools}`,
 );
 
 // Handle list tools request

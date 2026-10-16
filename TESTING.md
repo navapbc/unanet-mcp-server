@@ -38,8 +38,8 @@ This will:
 Expected output shows:
 - "Authentication configured successfully"
 - "Server started successfully"
-- List of 15 tools (projects, timesheets, contacts, financials)
-- List of 2 resources (active projects, timesheet templates)
+- A list of 33 self-service read tools (leave, expenses, timesheets, approvals, My Projects, ...)
+- No resources by default (the project list and timesheet templates appear with the org-level read flag)
 
 ### 2. Test in Claude Desktop (Without Real API)
 

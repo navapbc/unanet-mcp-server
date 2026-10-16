@@ -6,6 +6,7 @@
  */
 
 import express from "express";
+import { registerExtendedMockRoutes } from "./mock-routes-extended.js";
 
 const app = express();
 // Raised from the 100kb default so base64 receipt bodies (multi-MB) are
@@ -130,7 +131,22 @@ const mockExpenses: any[] = [
 	},
 ];
 
+let loginCount = 0;
+// Keys (never values) of the last login body, so tests can see whether
+// customerId was sent.
+let lastLoginBodyKeys: string[] = [];
+app.get("/platform/rest/__test/login-count", (_req, res) => res.json({ count: loginCount }));
+app.get("/platform/rest/__test/last-login-keys", (_req, res) =>
+	res.json({ keys: lastLoginBodyKeys }),
+);
+app.post("/platform/rest/__test/reset-login-count", (_req, res) => {
+	loginCount = 0;
+	res.json({ count: loginCount });
+});
+
 app.post("/platform/rest/login", (req, res) => {
+	loginCount += 1;
+	lastLoginBodyKeys = Object.keys(req.body || {}).sort();
 	const { username, password } = req.body || {};
 
 	if (username !== "test-user" || password !== "test-pass") {
@@ -143,6 +159,16 @@ app.post("/platform/rest/login", (req, res) => {
 			expiresIn: 900,
 		},
 	});
+});
+
+// Extended surface (timesheet lifecycle, leave requests, approvals, reviews,
+// user, expense lifecycle, directory). Registered before the `:id` routes below
+// so literal segments such as /me/time/time-periods take precedence.
+registerExtendedMockRoutes(app, {
+	mockExpenses,
+	mockAttachments,
+	nextDetailKey: () => nextExpenseDetailKey++,
+	nextAttachmentKey: () => nextAttachmentKey++,
 });
 
 app.post("/platform/rest/me/leave", (req, res) => {

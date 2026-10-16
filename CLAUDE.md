@@ -56,11 +56,24 @@ export const toolName = {
 }
 ```
 
-**Tool Categories**
-- `tools/projects.ts`: Project management operations
-- `tools/timesheet.ts`: Time and expense tracking
-- `tools/contacts.ts`: CRM operations (contacts, leads, opportunities)
-- `tools/financials.ts`: Billing, invoicing, and financial reports
+**Tool Categories** (93 tools at most, registered in three tiers in `src/index.ts`)
+- `tools/leave.ts`, `tools/leave-requests.ts`: leave balances; leave request list/history/create/update/submit/cancel/delete
+- `tools/expenses.ts`, `tools/expense-lifecycle.ts`: expense report reads, draft/line/receipt writes, update/delete, history, meal caps, imported card transactions, gated submit
+- `tools/timesheet.ts`, `tools/timesheet-lifecycle.ts`: timeslip add/edit/delete/submit; time periods, list, history, adjustments, attachments, create/delete timesheet
+- `tools/approvals.ts`, `tools/reviews.ts`: approval/review queues addressed to the user (type × role matrix) and approve/disapprove/complete actions
+- `tools/user.ts`: My Projects list, rates, alternates, personal attachments
+- `tools/projects.ts`, `tools/directory.ts`: org-level reads — projects/tasks/assignments/notes/admins, people, organizations, contracts, invoices, reference lookups, ping
+- `tools/contacts.ts`, `tools/financials.ts`: legacy CRM/billing tools (some are fail-closed stubs)
+- `tools/api.ts`: spec-driven catalog (`unanet_api_search_operations`, `unanet_api_describe_operation`) and a read-only executor (`unanet_api_read`) backed by `spec/api-catalog.json`. There is no generic writer: writes need a dedicated tool. Operations that can return credentials, tokens, bank, payroll or configuration data are classified `sensitive` and refused.
+
+**Tiers / flags**
+- Default: self-service `/me/…` reads only.
+- `UNANET_ENABLE_EXTENDED_READ_TOOLS=true` (alias `UNANET_ENABLE_LEGACY_READ_TOOLS`): org-level reads + generic catalog/reader + MCP resources.
+- `UNANET_ENABLE_WRITE_TOOLS=true`: every write. All writes take `confirm: true` (enforced by `z.literal(true)` and re-checked in the handler via `requireConfirm`). Submits validate first and hold on warnings.
+
+**Shared helpers**
+- `src/utils/http.ts`: `itemsFromResponse`, `pageInfo`, `compact`, `isoDateSchema`, `pageSchema`/`pageSizeSchema`, `confirmSchema`/`requireConfirm`, `keyName`, `errorResult`.
+- `src/utils/attachments.ts`: base64 attachment upload input (`attachmentInputFields`, `loadAttachmentInput`) and download (`saveAttachmentToDisk`). Local paths go through `checkLocalAttachmentPath`: no hidden files or folders (`.ssh`, `.aws`, `.env`), document/receipt extensions only, symlinks resolved.
 
 **Resources (`src/resources/`)**
 Resources provide read-only data endpoints:
@@ -96,10 +109,17 @@ npm run dev
 
 ### Adding New Tools
 
-1. Add tool definition to appropriate file in `src/tools/`
-2. Import and add to `tools` array in `src/index.ts`
-3. Follow existing patterns for error handling and response format
-4. Update TypeScript types in `src/types/unanet.ts` if needed
+1. Look the endpoint up first: `node scripts/build-api-catalog.mjs` keeps `spec/api-catalog.json` current; `unanet_api_describe_operation` (or `spec/api-schemas.json`) shows the request/response schema.
+2. Add the tool definition to the appropriate file in `src/tools/` using the shared helpers in `src/utils/`.
+3. Import it in `src/index.ts` and add it to the right tier array (`selfServiceReadTools`, `extendedReadTools`, or `mutatingTools`). Startup throws on duplicate tool names.
+4. Keep the input schema a single `z.object` (use `.refine`/`.superRefine` for cross-field rules) so the JSON Schema root stays `type: "object"` — Claude Desktop rejects top-level `allOf`.
+5. Add mock routes (`src/mock-routes-extended.ts`) and a test in `test/extended.test.js`; run `npm test` and `npm run lint`.
+### Spec & catalog scripts
+
+- `npm run fetch-spec` — refresh `spec/unanet-openapi.json` from the Unanet dev portal.
+- `npm run build-catalog` — regenerate `spec/api-catalog.json` (operations + read/write/sensitive classification) and `spec/api-schemas.json`. Re-run after fetching a new spec.
+- `npm run spec-drift-check` — monthly live-vs-committed spec drift check (report-only).
+- `npm run smoke:readonly` — live read-only smoke test using `.env` credentials (`test/smoke-readonly.mjs`; read handlers only, no writes; never pass `--verbose` in a shared transcript — it dumps personal data).
 
 ### Important Notes
 

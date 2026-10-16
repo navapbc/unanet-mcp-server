@@ -11,6 +11,10 @@ export interface UnanetAuth {
 	password: string;
 	baseUrl: string;
 	appName?: string;
+	// Optional tenant id for the login body. Omitted unless UNANET_CUSTOMER_ID
+	// is set: the OpenAPI spec marks it optional and the Nava tenant logs in
+	// without it, so nothing is guessed from the base URL.
+	customerId?: string;
 }
 
 export type UnanetClient = AxiosInstance;
@@ -26,6 +30,10 @@ interface PlatformTokenCacheEntry {
 }
 
 const platformTokenCache = new Map<string, PlatformTokenCacheEntry>();
+// In-flight logins keyed like the token cache, so N concurrent requests on a
+// cold cache share ONE login instead of each posting /login (Unanet rejects
+// bursts of concurrent logins with 400).
+const platformLoginInFlight = new Map<string, Promise<string>>();
 
 const platformLoginTokenPayloadSchema = z
 	.object({
@@ -177,22 +185,42 @@ export function isOutcomeUnknown(error: unknown): boolean {
 	return noResponse === true || (typeof status === "number" && status >= 500);
 }
 
+/**
+ * Pull Unanet's own error description out of a platform REST error body, e.g.
+ * {errors:[{code:"FORBIDDEN_INSUFFICIENT_LICENSE",description:"Insufficient
+ * license for API access."}]}. Returns "" when the body has no usable detail.
+ */
+function unanetErrorDetail(data: unknown): string {
+	if (!data || typeof data !== "object") return "";
+	const body = data as {
+		errors?: Array<{ code?: string; description?: string }>;
+		code?: string;
+		description?: string;
+	};
+	const first = body.errors?.[0];
+	const description = first?.description ?? body.description ?? "";
+	const code = first?.code ?? body.code ?? "";
+	if (!description && !code) return "";
+	return ` Unanet says: ${[code, description].filter(Boolean).join(" — ")}`;
+}
+
 function handleApiError(error: any): never {
 	if (error.response) {
 		const status = error.response.status;
 		const statusText = error.response.statusText;
+		const detail = unanetErrorDetail(error.response.data);
 
 		console.error(`[Unanet API] Response error: ${status} ${statusText}`);
 
 		switch (status) {
 			case 401:
 				throw apiError(
-					"Authentication failed. Please check your credentials.",
+					`Authentication failed. Please check your credentials.${detail}`,
 					status,
 				);
 			case 403:
 				throw apiError(
-					"Access forbidden. Your Unanet account does not have permission for this operation.",
+					`Access forbidden. Your Unanet account does not have permission for this operation.${detail}`,
 					status,
 				);
 			case 429:
@@ -310,7 +338,7 @@ export function createPlatformRestClient(
 }
 
 function platformTokenCacheKey(auth: UnanetAuth): string {
-	return `${auth.baseUrl}|${auth.username}|${auth.appName || DEFAULT_UNANET_APP_NAME}`;
+	return `${auth.baseUrl}|${auth.username}|${auth.appName || DEFAULT_UNANET_APP_NAME}|${auth.customerId ?? ""}`;
 }
 
 function getPlatformTokenExpiration(
@@ -333,6 +361,7 @@ function getPlatformTokenExpiration(
 	return now + DEFAULT_PLATFORM_TOKEN_TTL_MS;
 }
 
+
 export async function getPlatformBearerToken(
 	auth: UnanetAuth,
 ): Promise<string> {
@@ -342,31 +371,45 @@ export async function getPlatformBearerToken(
 		return cached.token;
 	}
 
-	const client = createPlatformRestClient(auth);
-	const response = await client.post("/platform/rest/login", {
-		username: auth.username,
-		password: auth.password,
-	});
+	const inFlight = platformLoginInFlight.get(cacheKey);
+	if (inFlight) return inFlight;
 
-	const parsed = platformLoginResponseSchema.safeParse(response.data);
-	if (!parsed.success) {
-		throw new Error("Unexpected Unanet login response shape");
+	const login = (async () => {
+		const client = createPlatformRestClient(auth);
+		const response = await client.post("/platform/rest/login", {
+			...(auth.customerId ? { customerId: auth.customerId } : {}),
+			username: auth.username,
+			password: auth.password,
+		});
+
+		const parsed = platformLoginResponseSchema.safeParse(response.data);
+		if (!parsed.success) {
+			throw new Error("Unexpected Unanet login response shape");
+		}
+
+		const tokenPayload = parsed.data.message ?? parsed.data;
+		const token = tokenPayload.token;
+		if (!token) {
+			throw new Error("Unexpected Unanet login response shape");
+		}
+
+		platformTokenCache.set(cacheKey, {
+			token,
+			expiresAt: getPlatformTokenExpiration(tokenPayload),
+		});
+
+		return token;
+	})();
+
+	platformLoginInFlight.set(cacheKey, login);
+	try {
+		return await login;
+	} finally {
+		platformLoginInFlight.delete(cacheKey);
 	}
-
-	const tokenPayload = parsed.data.message ?? parsed.data;
-	const token = tokenPayload.token;
-	if (!token) {
-		throw new Error("Unexpected Unanet login response shape");
-	}
-
-	platformTokenCache.set(cacheKey, {
-		token,
-		expiresAt: getPlatformTokenExpiration(tokenPayload),
-	});
-
-	return token;
 }
 
 export function clearPlatformTokenCache(): void {
 	platformTokenCache.clear();
+	platformLoginInFlight.clear();
 }
