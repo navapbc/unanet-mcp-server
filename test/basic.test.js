@@ -1206,6 +1206,15 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(conflict.error).toContain("CONFLICT_GENERIC");
 			expect(conflict.error).not.toContain("provide `wizard`");
 
+			// A "code" that is not a token (free text) is dropped; a valid one is kept.
+			const oddCode = await addExpenseDetailTool.handler(
+				{ ...plainArgs, expenseTypeKey: 9995, wizard: { type: "AIR" } },
+				auth,
+			);
+			expect(oddCode.error).toContain("VALIDATION_GENERIC");
+			expect(oddCode.error).not.toContain("support-only");
+			expect(oddCode.error).not.toContain("free text");
+
 			const validation = await validateExpenseReportTool.handler(
 				{ expenseId: draft.expenseId },
 				auth,

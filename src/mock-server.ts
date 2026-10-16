@@ -421,6 +421,15 @@ app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
 	if (req.body?.expenseTypeKey === 9996) {
 		return res.status(409).json({ errors: [{ code: "CONFLICT_GENERIC" }] });
 	}
+	// Type 9995: one error whose "code" is free text instead of a token, and one valid.
+	if (req.body?.expenseTypeKey === 9995) {
+		return res.status(400).json({
+			errors: [
+				{ code: "free text: support-only detail", context: { fieldName: "x" } },
+				{ code: "VALIDATION_GENERIC" },
+			],
+		});
+	}
 	const detail = {
 		key: nextExpenseDetailKey++,
 		expenseReportKey: expense.key,
