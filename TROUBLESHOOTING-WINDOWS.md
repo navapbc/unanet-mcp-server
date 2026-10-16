@@ -69,7 +69,7 @@ Please check your internet connection
 
 **Solutions:**
 1. **Check Internet:** Open a browser, go to google.com
-2. **Disable Antivirus:** Temporarily turn off Windows Defender or other antivirus
+2. **Antivirus or policy blocking npm:** Do not turn antivirus off. Send the exact error text to your IT team or Billy Hunt.
 3. **Check Firewall:** Allow Node.js through Windows Firewall
 4. **Use Command Prompt:**
    ```
@@ -96,8 +96,8 @@ Claude doesn't recognize Unanet commands
    - Path should end with `\\dist\\index.js`
 
 3. **Check Environment Variables:**
-   - Both .env AND Claude config need your credentials
-   - Make sure they match exactly
+   - Credentials belong only in `.env`; the Claude config must not contain them
+   - If your password contains `#`, or starts or ends with a space, wrap it in single quotes in `.env`: `UNANET_PASSWORD='p#ss word'` (backticks if it also contains a single quote)
 
 4. **Test the Server Directly:**
    Open Command Prompt and run:
@@ -138,15 +138,14 @@ Connection works but Unanet rejects login
    - Try logging into Unanet web interface
    - Confirm username/password work
 
-2. **Check API Key:**
-   - API key is different from password
-   - Get from Unanet administrator
-   - Usually looks like: `abc123-def456-ghi789`
+2. **Verify URL Format:**
+   - Must be the origin only: `https://navapbc.unanet.biz` ✓
+   - Not: `https://navapbc.unanet.biz/platform/rest` ✗
+   - A trailing slash is accepted and removed; a path such as `/platform/rest` is rejected
 
-3. **Verify URL Format:**
-   - Must include `https://`
-   - No trailing slash: `https://company.unanet.com` ✓
-   - Not: `https://company.unanet.com/` ✗
+3. **Getting a 403 instead of 401?**
+   - Your login worked but your Unanet account lacks permission for that action
+   - This is a Unanet access question for Finance, not a connector problem
 
 ---
 

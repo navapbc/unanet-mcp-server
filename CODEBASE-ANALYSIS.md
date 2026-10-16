@@ -13,7 +13,7 @@ This is a Model Context Protocol (MCP) server that provides integration with the
 - **`npm run prepublishOnly`** - Automatically runs build before publishing
 
 ### Requirements:
-- Node.js >= 18.0.0
+- Node.js >= 20.0.0
 - TypeScript 5.3.0
 - ES Modules (type: "module" in package.json)
 
@@ -35,9 +35,7 @@ This is a Model Context Protocol (MCP) server that provides integration with the
 - Requires environment variables:
   - `UNANET_USERNAME`
   - `UNANET_PASSWORD`
-  - `UNANET_API_KEY`
-  - `UNANET_FIRM_CODE`
-  - `UNANET_BASE_URL`
+  - `UNANET_BASE_URL` (defaults to `https://navapbc.unanet.biz`)
 
 #### Tools (`src/tools/`)
 Organized by functional area:
@@ -69,9 +67,7 @@ Organized by functional area:
 ```bash
 UNANET_USERNAME=your_username
 UNANET_PASSWORD=your_password
-UNANET_API_KEY=your_api_key
-UNANET_FIRM_CODE=your_firm_code
-UNANET_BASE_URL=https://api.unanet.com  # or your Unanet instance URL
+UNANET_BASE_URL=https://navapbc.unanet.biz  # origin only
 ```
 
 ### TypeScript Configuration:
@@ -164,8 +160,7 @@ The server is designed to be:
 
 ## 7. Security Considerations
 
-- Credentials stored in environment variables
-- Basic authentication sent with each API request
-- API key included in headers
+- Credentials stored in environment variables / local `.env`
+- Per-user login via `POST /platform/rest/login`; short-lived bearer token cached in memory per (baseUrl, username, appName)
+- No shared service account; the server inherits the caller's Unanet permissions
 - 30-second timeout on all requests
-- No credential caching or persistence

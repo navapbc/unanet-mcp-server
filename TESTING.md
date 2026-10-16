@@ -12,9 +12,8 @@ npm install
 npm run build
 ```
 
-Then run the test with mock credentials:
+Then run the server check. It needs no credentials and no `.env`; it starts the server against the local mock settings and lists its tools and resources:
 ```bash
-cp .env.test .env
 npm run test:server
 ```
 
@@ -56,9 +55,8 @@ You can test the MCP protocol with Claude Desktop using test credentials:
       "env": {
         "UNANET_USERNAME": "test-user",
         "UNANET_PASSWORD": "test-pass",
-        "UNANET_API_KEY": "test-api-key",
-        "UNANET_FIRM_CODE": "TEST001",
-        "UNANET_BASE_URL": "https://test.unanet.com"
+        "UNANET_BASE_URL": "http://127.0.0.1:3000",
+        "UNANET_ALLOW_INSECURE_LOCAL_MOCK": "true"
       }
     }
   }
@@ -85,18 +83,18 @@ npm run mock-server
 
 This starts a mock Unanet API on http://localhost:3000 with:
 - Test endpoints for projects, timesheets, etc.
-- Basic authentication (test-user/test-pass)
-- API key validation (test-api-key)
+- Platform REST login (`POST /platform/rest/login`, test-user/test-pass) returning a bearer token
 
 ### 2. Test with Mock API
 
 ```bash
 # Terminal 2: Run MCP server against mock API
-cp .env.test .env
+UNANET_USERNAME=test-user UNANET_PASSWORD=test-pass \
+UNANET_BASE_URL=http://127.0.0.1:3000 UNANET_ALLOW_INSECURE_LOCAL_MOCK=true \
 npm run dev
 ```
 
-The `.env.test` file points to http://localhost:3000 (the mock server).
+These variables point the server at the mock API on http://127.0.0.1:3000. The mock accepts only `test-user` / `test-pass`.
 
 ### 3. Full Integration Test
 

@@ -9,11 +9,11 @@ const DEFAULT_PLATFORM_TOKEN_TTL_MS = 15 * 60 * 1000;
 export interface UnanetAuth {
 	username: string;
 	password: string;
-	apiKey?: string;
-	firmCode?: string;
 	baseUrl: string;
 	appName?: string;
 }
+
+export type UnanetClient = AxiosInstance;
 
 export interface BaseUrlValidationOptions {
 	allowInsecureLocalMock?: boolean;
@@ -150,19 +150,6 @@ export function validateAuth(
 	validateUnanetBaseUrl(auth.baseUrl, options);
 }
 
-export function validateLegacyAuth(auth: UnanetAuth): void {
-	if (!auth.apiKey) {
-		throw new Error(
-			"UNANET_API_KEY environment variable is required for legacy API tools",
-		);
-	}
-	if (!auth.firmCode) {
-		throw new Error(
-			"UNANET_FIRM_CODE environment variable is required for legacy API tools",
-		);
-	}
-}
-
 function safeUrlForLog(url?: string): string {
 	return (url || "")
 		.replace(/password=([^&]+)/gi, "password=***")
@@ -176,6 +163,18 @@ function apiError(message: string, status?: number): Error {
 		(err as Error & { status?: number }).status = status;
 	}
 	return err;
+}
+
+// True when a request may have been applied by Unanet even though it failed:
+// the request was sent and no response came back, or Unanet answered 5xx.
+// A failure that happens before the request is sent (login, setup) is not.
+export function isOutcomeUnknown(error: unknown): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	const { noResponse, status } = error as {
+		noResponse?: boolean;
+		status?: number;
+	};
+	return noResponse === true || (typeof status === "number" && status >= 500);
 }
 
 function handleApiError(error: any): never {
@@ -193,7 +192,7 @@ function handleApiError(error: any): never {
 				);
 			case 403:
 				throw apiError(
-					"Access forbidden. Please check your API permissions.",
+					"Access forbidden. Your Unanet account does not have permission for this operation.",
 					status,
 				);
 			case 429:
@@ -216,9 +215,11 @@ function handleApiError(error: any): never {
 	}
 
 	if (error.request) {
-		throw new Error(
+		const noResponse = new Error(
 			"No response from Unanet API. Please check your network connection and base URL.",
 		);
+		(noResponse as Error & { noResponse?: boolean }).noResponse = true;
+		throw noResponse;
 	}
 
 	throw new Error(`Request setup error: ${error.message}`);
@@ -245,7 +246,7 @@ function addSafeInterceptors(client: AxiosInstance): AxiosInstance {
 	return client;
 }
 
-export function createUnanetClient(auth: UnanetAuth): AxiosInstance {
+export function createUnanetClient(auth: UnanetAuth): UnanetClient {
 	const baseURL = validateUnanetBaseUrl(auth.baseUrl, {
 		allowInsecureLocalMock: isEnabled(
 			process.env.UNANET_ALLOW_INSECURE_LOCAL_MOCK,

@@ -96,7 +96,7 @@ If all tests pass, you're ready to use Unanet with Claude!
 
 ### Nothing Works 😟
 1. Check the [Troubleshooting Guide](TROUBLESHOOTING-WINDOWS.md)
-2. Verify credentials in both .env and Claude config
+2. Verify credentials in `.env` (credentials belong only there, not in the Claude config)
 3. Make sure you restarted Claude Desktop
 
 ## 📝 Test Log Template

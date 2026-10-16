@@ -23,6 +23,36 @@ let nextExpenseKey = 9003;
 let nextExpenseDetailKey = 9101;
 let nextAttachmentKey = 9201;
 const mockAttachments: Record<number, any[]> = {};
+let timesheetCreateCount = 0;
+let timesheetSearchCount = 0;
+let nextTimesheetKey = 205;
+type CreateFault =
+	| "409"
+	| "503"
+	| "no-response"
+	| "no-key"
+	| "nested-period"
+	| "start-only";
+let nextCreateFault: CreateFault | null = null;
+// Created timesheets whose GET returns an unusual shape: Unanet's null-field,
+// nested-period shape, or a period with a start date and no end date.
+const readbackShapes = new Map<number, "nested-period" | "start-only">();
+
+interface MockTimesheet {
+	key: number;
+	beginDate: string;
+	endDate: string;
+	status: string;
+	timeslips: unknown[];
+}
+
+const createdTimesheets = new Map<number, MockTimesheet>();
+// The seeded fixture sheets (201-204) cover 2026-01-01..2026-01-15. Search
+// answers with them only for workDates in that period, plus the explicit
+// SEARCH_KEY_BY_DATE entries. Elsewhere search returns created timesheets only,
+// so any ordinary period can be created. Fixture 211 is a separate case below.
+const SEEDED_TIMESHEETS_START = "2026-01-01";
+const SEEDED_TIMESHEETS_END = "2026-01-15";
 
 const mockExpenses: any[] = [
 	{
@@ -439,15 +469,153 @@ app.get("/platform/rest/currencies/currency-codes", (_req, res) => {
 	});
 });
 
+// Explicit search answers. 2026-03-05 and 2026-04-07 reproduce a Unanet quirk:
+// search can return a sheet whose period does not contain the requested date.
+// Write tools must reject it as outside the resolved period (2026-03-05), and
+// the create tool must not mistake it for a same-period duplicate (2026-04-07).
 const SEARCH_KEY_BY_DATE: Record<string, number> = {
 	"2026-01-02": 202,
 	"2026-01-03": 203,
 	"2026-01-04": 204,
+	"2026-03-05": 201,
+	"2026-04-07": 201,
 };
 
+// Sheets whose period Unanet reports only in part (or not at all), keyed by the
+// workDate that finds them. The same object answers the sheet's GET.
+const PARTIAL_PERIOD_SHEETS: Record<
+	string,
+	{ key: number; status: string; beginDate?: string; endDate?: string }
+> = {
+	"2026-05-06": { key: 212, status: "INUSE" },
+	"2026-06-20": { key: 213, status: "INUSE", beginDate: "2026-06-01" },
+	"2026-07-20": { key: 214, status: "INUSE", endDate: "2026-07-31" },
+};
+
+// Searches that return several sheets, keyed by workDate. 2026-09-09 returns a
+// sheet for another period first, then the one that covers the date. 2026-08-10
+// returns a sheet with no period in the result; its GET reports the period.
+const MULTI_RESULT_SEARCHES: Record<string, object[]> = {
+	"2026-09-09": [
+		{ key: 216, status: "INUSE", beginDate: "2026-01-01", endDate: "2026-01-15" },
+		{ key: 217, status: "INUSE", beginDate: "2026-09-01", endDate: "2026-09-15" },
+	],
+	"2026-08-10": [{ key: 215, status: "INUSE" }],
+	// A full page of sheets for other periods: more results may exist.
+	"2026-03-20": Array.from({ length: 25 }, (_unused, index) => ({
+		key: 300 + index,
+		status: "INUSE",
+		beginDate: "2026-01-01",
+		endDate: "2026-01-15",
+	})),
+};
+
+function mockTimesheetPeriod(date: string): {
+	beginDate: string;
+	endDate: string;
+} {
+	const [year, month, day] = date.split("-").map(Number);
+	const monthText = String(month).padStart(2, "0");
+	if (day <= 15) {
+		return {
+			beginDate: `${year}-${monthText}-01`,
+			endDate: `${year}-${monthText}-15`,
+		};
+	}
+
+	const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+	return {
+		beginDate: `${year}-${monthText}-16`,
+		endDate: `${year}-${monthText}-${String(endDay).padStart(2, "0")}`,
+	};
+}
+
+app.post("/platform/rest/me/time", (req, res) => {
+	const date = req.body?.date;
+	if (typeof date !== "string") {
+		return res.status(400).json({ error: "date required" });
+	}
+	if (nextCreateFault === "503" || nextCreateFault === "409") {
+		const status = Number(nextCreateFault);
+		nextCreateFault = null;
+		return res.status(status).json({ error: `Mock failure ${status}` });
+	}
+	if (nextCreateFault === "no-response") {
+		nextCreateFault = null;
+		req.socket.destroy();
+		return;
+	}
+	const fault = nextCreateFault;
+	nextCreateFault = null;
+	if (fault === "no-key") {
+		return res.json({ key: null });
+	}
+	const existing = [...createdTimesheets.values()].find(
+		(timesheet) => date >= timesheet.beginDate && date <= timesheet.endDate,
+	);
+	if (existing) {
+		return res.status(409).json({ error: "Timesheet already exists" });
+	}
+
+	const key = nextTimesheetKey++;
+	const period = mockTimesheetPeriod(date);
+	createdTimesheets.set(key, {
+		key,
+		...period,
+		status: "INUSE",
+		timeslips: [],
+	});
+	if (fault === "nested-period" || fault === "start-only") {
+		readbackShapes.set(key, fault);
+	}
+	timesheetCreateCount += 1;
+	return res.json({ key });
+});
+
 app.post("/platform/rest/me/time/search", (req, res) => {
+	timesheetSearchCount += 1;
 	const workDate = req.body?.workDate;
-	const key = SEARCH_KEY_BY_DATE[workDate] ?? 201;
+	const created = [...createdTimesheets.values()].filter(
+		(timesheet) =>
+			workDate >= timesheet.beginDate && workDate <= timesheet.endDate,
+	);
+	if (created.length > 0) {
+		return res.json({ items: created });
+	}
+	// Unanet returns null for fields it does not populate and nests the period
+	// under timePeriod; every timesheet tool must tolerate that shape.
+	if (workDate === "2026-02-10") {
+		return res.json({
+			items: [
+				{
+					key: 211,
+					id: null,
+					beginDate: null,
+					endDate: null,
+					timePeriod: { beginDate: "2026-02-01", endDate: "2026-02-15" },
+					status: "INUSE",
+				},
+			],
+		});
+	}
+	const partialSheet = PARTIAL_PERIOD_SHEETS[workDate];
+	if (partialSheet) {
+		return res.json({ items: [partialSheet] });
+	}
+	const multiResult = MULTI_RESULT_SEARCHES[workDate];
+	if (multiResult) {
+		const pageSize = Number(req.query.pageSize) || multiResult.length;
+		return res.json({ items: multiResult.slice(0, pageSize) });
+	}
+	// Range searches (beginDateStart/End) carry no workDate and keep answering
+	// with the seeded fixture.
+	const inSeededPeriod =
+		workDate === undefined ||
+		(workDate >= SEEDED_TIMESHEETS_START && workDate <= SEEDED_TIMESHEETS_END);
+	const key = SEARCH_KEY_BY_DATE[workDate] ?? (inSeededPeriod ? 201 : undefined);
+	if (key === undefined) {
+		return res.json({ items: [] });
+	}
 	res.json({
 		items: [
 			{
@@ -463,6 +631,43 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 
 app.get("/platform/rest/me/time/:id", (req, res) => {
 	const key = Number(req.params.id);
+	const created = createdTimesheets.get(key);
+	const shape = readbackShapes.get(key);
+	if (created && shape === "nested-period") {
+		return res.json({
+			key,
+			id: null,
+			beginDate: null,
+			endDate: null,
+			timePeriod: { beginDate: created.beginDate, endDate: created.endDate },
+			status: created.status,
+		});
+	}
+	if (created && shape === "start-only") {
+		return res.json({
+			key,
+			beginDate: created.beginDate,
+			endDate: null,
+			status: created.status,
+		});
+	}
+	if (created) {
+		return res.json(created);
+	}
+	const partialSheet = Object.values(PARTIAL_PERIOD_SHEETS).find(
+		(sheet) => sheet.key === key,
+	);
+	if (partialSheet) {
+		return res.json(partialSheet);
+	}
+	if (key === 215) {
+		return res.json({
+			key,
+			status: "INUSE",
+			beginDate: "2026-08-01",
+			endDate: "2026-08-15",
+		});
+	}
 	res.json({
 		key,
 		beginDate: "2026-01-01",
@@ -521,6 +726,19 @@ app.get("/platform/rest/__test/put-count", (_req, res) => {
 app.post("/platform/rest/__test/reset-put-count", (_req, res) => {
 	timesheetPutCount = 0;
 	res.json({ count: timesheetPutCount });
+});
+
+app.get("/platform/rest/__test/timesheet-create-count", (_req, res) => {
+	res.json({ count: timesheetCreateCount });
+});
+
+app.get("/platform/rest/__test/timesheet-search-count", (_req, res) => {
+	res.json({ count: timesheetSearchCount });
+});
+
+app.post("/platform/rest/__test/next-create-fault", (req, res) => {
+	nextCreateFault = req.body?.mode ?? null;
+	res.json({ mode: nextCreateFault });
 });
 
 app.get("/platform/rest/me/time/:id/validate", (req, res) => {

@@ -81,23 +81,19 @@ Notepad Window:
 ├─────────────────────────────────────────┤
 │ File  Edit  Format  View  Help          │
 ├─────────────────────────────────────────┤
-│ # Unanet API Configuration              │
+│ # Unanet Platform REST Configuration    │
+│ UNANET_BASE_URL=https://navapbc.unanet.biz  ← Leave as is │
 │ UNANET_USERNAME=your-username    ← Change this │
 │ UNANET_PASSWORD=your-password    ← Change this │
-│ UNANET_API_KEY=your-api-key      ← Change this │
-│ UNANET_FIRM_CODE=your-firm-code  ← Change this │
-│ UNANET_BASE_URL=https://...      ← Change this │
 │                                         │
 │ # Optional: Logging level               │
 │ LOG_LEVEL=info                          │
 └─────────────────────────────────────────┘
 
 Example with real values:
+UNANET_BASE_URL=https://navapbc.unanet.biz
 UNANET_USERNAME=jsmith
 UNANET_PASSWORD=MySecurePass123!
-UNANET_API_KEY=abc123-def456-ghi789
-UNANET_FIRM_CODE=ACME001
-UNANET_BASE_URL=https://acme.unanet.com
 ```
 
 ### Step 5: Claude Desktop Config
@@ -113,20 +109,13 @@ File Explorer:
 └─────────────────────────────────────────┘
 ```
 
-The config file should look like:
+The config file should look like this. Note there are **no credentials** in it — the server reads them from `.env` in the project folder:
 ```json
 {
   "mcpServers": {
     "unanet": {
-      "command": "node",
-      "args": ["C:\\UnanetMCP\\unanet-mcp-server\\dist\\index.js"],
-      "env": {
-        "UNANET_USERNAME": "jsmith",
-        "UNANET_PASSWORD": "MySecurePass123!",
-        "UNANET_API_KEY": "abc123-def456-ghi789",
-        "UNANET_FIRM_CODE": "ACME001",
-        "UNANET_BASE_URL": "https://acme.unanet.com"
-      }
+      "command": "cmd.exe",
+      "args": ["/c", "cd /d \"C:\\UnanetMCP\\unanet-mcp-server\" && node dist\\index.js"]
     }
   }
 }
@@ -190,7 +179,7 @@ Please install Node.js first:
 [ERROR] Failed to install dependencies!
 Please check your internet connection and try again.
 ```
-**Solution:** Check internet, disable antivirus temporarily
+**Solution:** Check internet. If it still fails, send the error text to your IT team or Billy Hunt; do not turn off antivirus
 
 ### Error: "Access Denied"
 ```

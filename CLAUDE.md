@@ -19,9 +19,10 @@ npm run clean    # Remove dist/ directory
 
 ### Setup Requirements
 1. Create `.env` file from `.env.example` with Unanet credentials:
-   - `UNANET_USERNAME`, `UNANET_PASSWORD`, `UNANET_API_KEY`, `UNANET_FIRM_CODE`, `UNANET_BASE_URL`
+   - `UNANET_USERNAME`, `UNANET_PASSWORD`, `UNANET_BASE_URL` (defaults to the Nava tenant)
+   - No API key or firm code. Auth is per-user Platform REST login (`POST /platform/rest/login` → short-lived bearer token). The server inherits exactly the caller's Unanet permissions.
 2. Run `npm install` to install dependencies
-3. Node.js >= 18.0.0 required (ES modules)
+3. Node.js >= 20.0.0 required (ES modules; matches `engines` in `package.json`)
 
 ## Architecture Overview
 
@@ -36,7 +37,7 @@ This is an MCP (Model Context Protocol) server that bridges Claude Desktop with 
 - Routes tool calls to appropriate handlers
 
 **Authentication (`src/auth.ts`)**
-- Creates authenticated Axios clients with Basic Auth + API Key headers
+- Logs in with username/password via `POST /platform/rest/login`, caches the bearer token per (baseUrl, username, appName), and creates Axios clients that send `Authorization: Bearer <token>` plus `X-Una-App`
 - Implements request/response interceptors for logging and error handling
 - Maps HTTP errors to user-friendly messages
 

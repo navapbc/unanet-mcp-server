@@ -25,7 +25,7 @@ Perfect! We've created a complete guide just for you:
 ### 💻 "I'm Comfortable with Technical Setup"
 
 You can use either:
-- **Quick Way**: Run `setup-windows.bat` (Windows) or `setup.sh` (Mac/Linux)
+- **Quick Way**: Run `setup-windows.bat` (Windows) or `./setup-mac.sh` (Mac)
 - **Manual Way**: Follow the standard [README](README.md#installation)
 
 ### 🏢 "I'm Setting This Up for My Team"

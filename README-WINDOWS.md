@@ -7,12 +7,8 @@ This guide will help you connect Claude Desktop to your Unanet GovCon ERP system
 You will need:
 - ✅ A Windows computer (Windows 10 or 11)
 - ✅ Claude Desktop installed and working
-- ✅ Your Unanet login credentials:
-  - Username
-  - Password
-  - API Key
-  - Firm Code
-  - Your Unanet URL (looks like: https://yourcompany.unanet.com)
+- ✅ Your Unanet login credentials — the same username and password you use at https://navapbc.unanet.biz
+  - No API key, firm code, or special access is needed. The connector can only do what your Unanet account can already do.
 - ✅ About 15 minutes
 
 ## 🚀 Step-by-Step Installation
@@ -34,7 +30,7 @@ Node.js is required to run the Unanet connector.
 ### Step 2: Download the Unanet Connector (2 minutes)
 
 1. **Download the connector** from GitHub:
-   - Go to: https://github.com/culstrup/unanet-mcp-server
+   - Go to: https://github.com/navapbc/unanet-mcp-server
    - Click the green "Code" button
    - Click "Download ZIP"
    
@@ -57,27 +53,24 @@ Node.js is required to run the Unanet connector.
    - If Windows asks "Do you want to allow this?", click "Yes"
    - A black window (Command Prompt) will open
 
-3. **Follow the prompts**:
-   - The setup will check that everything is installed correctly
-   - It will download necessary files (this takes 1-2 minutes)
-   - When asked "Would you like to edit the .env file now?", type `Y` and press Enter
+3. **Let the setup run**:
+   - It checks that Node.js and npm are installed
+   - It installs and builds the connector (this takes 1-2 minutes)
+   - It creates a `.env` file, pauses, then opens it in Notepad
 
 4. **Enter your Unanet credentials** in Notepad:
    ```
    UNANET_USERNAME=your-username-here
    UNANET_PASSWORD=your-password-here
-   UNANET_API_KEY=your-api-key-here
-   UNANET_FIRM_CODE=your-firm-code-here
-   UNANET_BASE_URL=https://your-company.unanet.com
+   UNANET_BASE_URL=https://navapbc.unanet.biz
    ```
-   - Replace each `your-xxx-here` with your actual information
+   - Replace the username and password with your normal Unanet login; leave the URL alone
+   - If your password contains `#`, or starts or ends with a space, put single quotes around it: `UNANET_PASSWORD='p#ss word'`. Without them the password is cut off or trimmed and login fails. If it also contains a single quote, use backticks instead.
    - **Save the file** (Ctrl+S) and close Notepad
 
-5. **Configure Claude Desktop**:
-   - When asked "Would you like to automatically configure Claude Desktop?", type `Y` and press Enter
-   - When asked "Would you like to edit the Claude config now?", type `Y` and press Enter
-   - In the file that opens, find the Unanet section and update it with your credentials (same as step 4)
-   - **Save the file** (Ctrl+S) and close Notepad
+5. **Claude Desktop is configured for you**:
+   - The script backs up your existing Claude Desktop config, then adds an `unanet` entry that points at this folder. There is no prompt for this step.
+   - Your password stays in `.env` and is never copied into the Claude config.
 
 ### Step 4: Restart Claude Desktop (1 minute)
 
@@ -93,11 +86,10 @@ Node.js is required to run the Unanet connector.
 1. **Open Claude Desktop**
 
 2. **Test with these commands**:
-   - "Can you connect to Unanet?"
-   - "Show me my active Unanet projects"
-   - "What projects am I working on?"
+   - "What are my Unanet leave balances?"
+   - "Show me my recent Unanet expenses"
 
-If Claude responds with your project information, congratulations! 🎉 You're all set up!
+Compare the leave balances with what Unanet shows in your browser. If they match, you're all set up! 🎉 (Project and timesheet questions need the extra read tools; they are off by default on Windows. See the environment table in `README.md` to turn them on.)
 
 ## 🔧 Troubleshooting
 
@@ -111,12 +103,12 @@ If Claude responds with your project information, congratulations! 🎉 You're a
 
 ### Claude says "I don't have access to Unanet"
 1. Make sure you restarted Claude Desktop
-2. Check that your credentials are correct in both files
+2. Check that your username and password are correct in `.env`
 3. Try the setup again
 
 ### "Failed to install dependencies" error
 - Check your internet connection
-- Temporarily disable antivirus software
+- If it still fails, send the error text to your IT team or Billy Hunt; do not turn off antivirus
 - Try running setup-windows.bat as Administrator (right-click → Run as administrator)
 
 ## 📝 What Can You Ask Claude?

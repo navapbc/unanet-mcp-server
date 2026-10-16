@@ -220,6 +220,7 @@ UNANET_ENABLE_WRITE_TOOLS=true
 
 | Tool | Current behavior |
 | --- | --- |
+| `unanet_create_timesheet` | Live write; requests one empty in-progress timesheet starting on `date`, then reads it back and reports Unanet's actual period and whether it contains `date` (`verified`). Refuses dates after today. If the period already has a timesheet it creates nothing and returns the existing key with `success: false`. If the create request fails with no response or a 5xx, `created` is `"unknown"`: search the period before retrying. Requires `confirm: true`. Validated against the local mock only, not a live Unanet. |
 | `unanet_update_timesheet` | Live write; adds a time entry (one row per project/day) to your in-progress timesheet. Does not submit for approval, does not overwrite existing rows, and rejects a second entry for a project/day that already has one (use edit). Requires `confirm: true`. |
 | `unanet_edit_timeslip` | Live write; changes the hours and/or comment of an existing entry in place. Identify by `timeslipKey`, or `projectId` + `date`; ambiguous matches return candidates instead of guessing. Requires `confirm: true`. |
 | `unanet_delete_timeslip` | Live write; clears an entry (sets it to 0 hours and removes the comment). Unanet has no true row delete, so the project may still appear on the sheet with no hours. Requires `confirm: true`. |

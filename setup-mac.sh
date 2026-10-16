@@ -11,6 +11,30 @@ shell_quote() {
 	printf "'%s'" "${value//\'/\'\\\'\'}"
 }
 
+# dotenv has no escape sequences: a quoted value is taken literally up to the
+# matching quote, and an unquoted value stops at "#". Pick a quote character
+# the value does not contain. Double quotes also expand a literal \n or \r, so
+# they are the last resort and refused for values that contain those.
+dotenv_quote() {
+	local value="$1"
+	case "$value" in
+	*$'\n'* | *$'\r'*)
+		echo "A value with a line break cannot be stored in .env." >&2
+		return 1
+		;;
+	esac
+	if [[ "$value" != *"'"* ]]; then
+		printf "'%s'" "$value"
+	elif [[ "$value" != *'`'* ]]; then
+		printf '`%s`' "$value"
+	elif [[ "$value" != *'"'* && "$value" != *'\n'* && "$value" != *'\r'* ]]; then
+		printf '"%s"' "$value"
+	else
+		echo "A value containing all of ' \` \" cannot be stored in .env; change the password or edit .env by hand." >&2
+		return 1
+	fi
+}
+
 ask_yes_no() {
 	local prompt="$1"
 	local default="${2:-N}"
@@ -62,12 +86,17 @@ write_env_file() {
 		enable_writes="false"
 	fi
 
+	local base_url_env username_env password_env
+	base_url_env="$(dotenv_quote "$base_url")"
+	username_env="$(dotenv_quote "$username")"
+	password_env="$(dotenv_quote "$password")"
+
 	umask 077
 	cat >"$PROJECT_DIR/.env" <<EOF_ENV
 # Unanet Platform REST Configuration
-UNANET_BASE_URL=$base_url
-UNANET_USERNAME=$username
-UNANET_PASSWORD=$password
+UNANET_BASE_URL=$base_url_env
+UNANET_USERNAME=$username_env
+UNANET_PASSWORD=$password_env
 UNANET_APP_NAME=$DEFAULT_APP_NAME
 
 # Extra tool surfaces. Defaults are safe.

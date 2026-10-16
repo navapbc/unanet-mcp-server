@@ -257,6 +257,394 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(result.projects[0].projectCode).toBe("PRJ-001");
 		});
 
+		const createAuth = {
+			username: "test-user",
+			password: "test-pass",
+			baseUrl: MOCK_BASE_URL,
+		};
+		const mockCount = async (name) =>
+			(
+				await (
+					await fetch(`${MOCK_BASE_URL}/platform/rest/__test/${name}`)
+				).json()
+			).count;
+		const injectCreateFault = (mode) =>
+			fetch(`${MOCK_BASE_URL}/platform/rest/__test/next-create-fault`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ mode }),
+			});
+
+		it("should create one timesheet per period and refuse a duplicate period", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			const created = await createTimesheetTool.handler(
+				{ date: "2025-11-03", confirm: true },
+				createAuth,
+			);
+			expect(created).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2025-11-01", endDate: "2025-11-15" },
+				status: "INUSE",
+			});
+			expect(created.timesheetKey).toBeGreaterThan(0);
+
+			const duplicate = await createTimesheetTool.handler(
+				{ date: "2025-11-10", confirm: true },
+				createAuth,
+			);
+			expect(duplicate).toMatchObject({
+				success: false,
+				created: false,
+				timesheetKey: created.timesheetKey,
+			});
+			expect(duplicate.error).toContain("already exists");
+
+			const nextPeriod = await createTimesheetTool.handler(
+				{ date: "2025-11-20", confirm: true },
+				createAuth,
+			);
+			expect(nextPeriod).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2025-11-16", endDate: "2025-11-30" },
+			});
+			expect(nextPeriod.timesheetKey).not.toBe(created.timesheetKey);
+
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore + 2);
+		});
+
+		it("should refuse a future date before sending any request", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const searchesBefore = await mockCount("timesheet-search-count");
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2999-01-01", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({ success: false, created: false });
+			expect(result.error).toContain("future timesheet");
+			expect(await mockCount("timesheet-search-count")).toBe(searchesBefore);
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should reject invalid dates and missing or false confirm without any request", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const searchesBefore = await mockCount("timesheet-search-count");
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			for (const args of [
+				{ date: "2025-02-29", confirm: true },
+				{ date: "2025-13-01", confirm: true },
+				{ date: "not-a-date", confirm: true },
+				{ date: "2025-11-03" },
+				{ date: "2025-11-03", confirm: false },
+			]) {
+				await expect(createTimesheetTool.handler(args, createAuth)).rejects.toThrow();
+				expect(() => createTimesheetTool.inputSchema.parse(args)).toThrow();
+			}
+
+			expect(await mockCount("timesheet-search-count")).toBe(searchesBefore);
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should report an unknown outcome when the create request fails after being sent", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			for (const [mode, date] of [
+				["503", "2025-10-03"],
+				["no-response", "2025-10-20"],
+			]) {
+				await injectCreateFault(mode);
+				const result = await createTimesheetTool.handler(
+					{ date, confirm: true },
+					createAuth,
+				);
+				expect(result).toMatchObject({ success: false, created: "unknown" });
+				expect(result.warning).toContain("Search the period before retrying");
+			}
+
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should keep created:false when the lookup before the create fails", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2025-09-03", confirm: true },
+				{ ...createAuth, username: "wrong-user" },
+			);
+
+			expect(result).toMatchObject({ success: false, created: false });
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should keep created:false when Unanet rejects the create with a 4xx", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			await injectCreateFault("409");
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2025-06-03", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({ success: false, created: false });
+			expect(result.warning).toBeUndefined();
+		});
+
+		it("should not class a failed login as an unknown write outcome", async () => {
+			const { isOutcomeUnknown } = await import("../dist/auth.js");
+			const client = createUnanetClient({ ...createAuth, username: "wrong-user" });
+
+			const error = await client
+				.post("/me/time", { date: "2025-06-03" })
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(Error);
+			expect(isOutcomeUnknown(error)).toBe(false);
+		});
+
+		it("should create a timesheet for an ordinary recent period the seeded fixtures do not cover", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-10-15", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2026-10-01", endDate: "2026-10-15" },
+			});
+		});
+
+		it("should create the second January period even though fixtures cover the first", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+
+			// No second-half sheet exists yet; the fixtures cover January 1-15 only.
+			const { getMyTimesheetProjectsTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const beforeCreate = await getMyTimesheetProjectsTool.handler(
+				{ date: "2026-01-20" },
+				createAuth,
+			);
+			expect(beforeCreate.success).toBe(false);
+			expect(beforeCreate.error).toContain("No existing timesheet");
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-01-20", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2026-01-16", endDate: "2026-01-31" },
+			});
+		});
+
+		it("should not mistake a sheet for another period for a same-period duplicate", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+
+			// Search returns fixture 201 (2026-01-01..15) for this date.
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-04-07", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2026-04-01", endDate: "2026-04-15" },
+			});
+		});
+
+		it.each([
+			["no period", "2026-05-06", 212],
+			["only a start date", "2026-06-20", 213],
+			["only an end date", "2026-07-20", 214],
+		])(
+			"should create nothing when the found timesheet reports %s",
+			async (_label, date, foundKey) => {
+				const { createTimesheetTool } = await import(
+					"../dist/tools/timesheet.js"
+				);
+				const createsBefore = await mockCount("timesheet-create-count");
+
+				const result = await createTimesheetTool.handler(
+					{ date, confirm: true },
+					createAuth,
+				);
+
+				expect(result).toMatchObject({
+					success: false,
+					created: false,
+					timesheetKey: foundKey,
+				});
+				expect(result.error).toContain("Could not determine the period");
+				expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+			},
+		);
+
+		it("should refuse when a later search result covers the date", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			// Search returns a January sheet first, then the September sheet.
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-09-09", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: false,
+				created: false,
+				timesheetKey: 217,
+			});
+			expect(result.error).toContain("already exists");
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should refuse when a full page of results leaves more possible", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			// 25 sheets for other periods: a covering sheet could be on a later page.
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-03-20", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({ success: false, created: false });
+			expect(result.error).toContain("25 or more timesheets");
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should load the sheet when the search result carries no period", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			// The search result is {key: 215}; only GET reports 2026-08-01..15.
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-08-10", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: false,
+				created: false,
+				timesheetKey: 215,
+			});
+			expect(result.error).toContain("already exists");
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should flag, not fail, a create response with no key", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			await injectCreateFault("no-key");
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2025-08-04", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: false,
+			});
+			expect(result.warning).toContain("returned no timesheet key");
+		});
+
+		it("should verify the period from Unanet's null-field, nested-period shape", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			await injectCreateFault("nested-period");
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2025-07-04", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2025-07-01", endDate: "2025-07-15" },
+			});
+		});
+
+		it("should not verify a period that has no end date", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			await injectCreateFault("start-only");
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2025-05-04", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: false,
+			});
+		});
+
+		it("should find a timesheet whose search result has null id and dates", async () => {
+			const { getMyTimesheetProjectsTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+
+			const projects = await getMyTimesheetProjectsTool.handler(
+				{ date: "2026-02-10", search: "AI" },
+				createAuth,
+			);
+
+			expect(projects.success).toBe(true);
+			expect(projects.projects[0].code).toBe("AI-PROJECT");
+		});
+
 		it("should add confirmed Platform REST timesheet entries", async () => {
 			const { updateTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
@@ -298,7 +686,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 					entries: [
 						{
 							projectId: "AI-PROJECT",
-							date: "2026-01-20",
+							date: "2026-03-05",
 							hours: 1,
 						},
 					],
@@ -1002,11 +1390,52 @@ describe("Unanet MCP Server Basic Tests", () => {
 					expect(toolNames).not.toContain("unanet_add_expense_attachment");
 					expect(toolNames).not.toContain("unanet_update_project_budget");
 					expect(toolNames).not.toContain("unanet_create_expense_report_draft");
+					expect(toolNames).not.toContain("unanet_create_timesheet");
 					resolve();
 				});
 
 				serverProcess.stdin.write(JSON.stringify(listToolsRequest) + "\n");
 			});
+		});
+
+		it("should advertise timesheet creation when write tools are enabled", async () => {
+			const writeServerProcess = spawn("node", ["dist/index.js"], {
+				env: {
+					...process.env,
+					UNANET_USERNAME: "test-user",
+					UNANET_PASSWORD: "test-pass",
+					UNANET_BASE_URL: MOCK_BASE_URL,
+					UNANET_ALLOW_INSECURE_LOCAL_MOCK: "true",
+					UNANET_ENABLE_LEGACY_READ_TOOLS: "false",
+					UNANET_ENABLE_WRITE_TOOLS: "true",
+				},
+			});
+
+			try {
+				await new Promise((resolve) => setTimeout(resolve, 250));
+				const response = await new Promise((resolve, reject) => {
+					const timer = setTimeout(
+						() => reject(new Error("Timed out waiting for tools/list")),
+						3000,
+					);
+					writeServerProcess.stdout.once("data", (data) => {
+						clearTimeout(timer);
+						resolve(JSON.parse(data.toString()));
+					});
+					writeServerProcess.stdin.write(
+						`${JSON.stringify({
+							jsonrpc: "2.0",
+							method: "tools/list",
+							params: {},
+							id: 1,
+						})}\n`,
+					);
+				});
+				const toolNames = response.result.tools.map((tool) => tool.name);
+				expect(toolNames).toContain("unanet_create_timesheet");
+			} finally {
+				writeServerProcess.kill();
+			}
 		});
 
 		it("should not list legacy resources in safe read-only mode", async () => {
