@@ -254,7 +254,7 @@ function handleApiError(error: any): never {
 					method,
 				);
 			default:
-				throw apiError(`API error: ${status} ${statusText}`, status, method);
+				throw apiError(`API error: ${status} ${statusText}${detail}`, status, method);
 		}
 	}
 

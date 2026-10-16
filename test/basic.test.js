@@ -1147,6 +1147,11 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(detail.detailId).toBeGreaterThan(0);
 			expect(detail.message).toContain("Review and submit manually");
 
+			const wizardLine = (
+				await createUnanetClient(auth).get(`/me/expenses/${draft.expenseId}`)
+			).data.expenseDetails.find((line) => line.key === detail.detailId);
+			expect(wizardLine.wizard).toEqual({ type: "ENTERTAINMENT" });
+
 			// Plain expense types (parking, baggage, tolls...) have no wizard.
 			const plainArgs = addExpenseDetailTool.inputSchema.parse({
 				confirm: true,
@@ -1167,6 +1172,15 @@ describe("Unanet MCP Server Basic Tests", () => {
 			).data.expenseDetails.find((line) => line.key === plain.detailId);
 			expect(stored.summary).toBe("Parking");
 			expect("wizard" in stored).toBe(false);
+
+			// A type that needs a wizard: Unanet's own validation text reaches the caller.
+			const missingWizard = await addExpenseDetailTool.handler(
+				{ ...plainArgs, expenseTypeKey: 9998 },
+				auth,
+			);
+			expect(missingWizard.success).toBe(false);
+			expect(missingWizard.error).toContain("VALIDATION_MUST_NOT_BE_NULL");
+			expect(missingWizard.error).toContain("wizard must not be null");
 
 			const validation = await validateExpenseReportTool.handler(
 				{ expenseId: draft.expenseId },

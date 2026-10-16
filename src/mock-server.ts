@@ -396,6 +396,13 @@ app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
 	if (expense.status !== "INUSE") {
 		return res.status(400).json({ error: "Expense is not editable" });
 	}
+	// Type 9998 stands for an expense type that needs a wizard: Unanet rejects the
+	// line with a 400 and its own error body when none is sent.
+	if (req.body?.expenseTypeKey === 9998 && !req.body?.wizard) {
+		return res.status(400).json({
+			errors: [{ code: "VALIDATION_MUST_NOT_BE_NULL", description: "wizard must not be null" }],
+		});
+	}
 	const detail = {
 		key: nextExpenseDetailKey++,
 		expenseReportKey: expense.key,
