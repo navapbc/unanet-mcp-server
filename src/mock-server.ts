@@ -481,6 +481,28 @@ const SEARCH_KEY_BY_DATE: Record<string, number> = {
 	"2026-04-07": 201,
 };
 
+// Sheets whose period Unanet reports only in part (or not at all), keyed by the
+// workDate that finds them. The same object answers the sheet's GET.
+const PARTIAL_PERIOD_SHEETS: Record<
+	string,
+	{ key: number; status: string; beginDate?: string; endDate?: string }
+> = {
+	"2026-05-06": { key: 212, status: "INUSE" },
+	"2026-06-20": { key: 213, status: "INUSE", beginDate: "2026-06-01" },
+	"2026-07-20": { key: 214, status: "INUSE", endDate: "2026-07-31" },
+};
+
+// Searches that return several sheets, keyed by workDate. 2026-09-09 returns a
+// sheet for another period first, then the one that covers the date. 2026-08-10
+// returns a sheet with no period in the result; its GET reports the period.
+const MULTI_RESULT_SEARCHES: Record<string, object[]> = {
+	"2026-09-09": [
+		{ key: 216, status: "INUSE", beginDate: "2026-01-01", endDate: "2026-01-15" },
+		{ key: 217, status: "INUSE", beginDate: "2026-09-01", endDate: "2026-09-15" },
+	],
+	"2026-08-10": [{ key: 215, status: "INUSE" }],
+};
+
 function mockTimesheetPeriod(date: string): {
 	beginDate: string;
 	endDate: string;
@@ -569,9 +591,14 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 			],
 		});
 	}
-	// A sheet whose period Unanet does not report at all (see GET below).
-	if (workDate === "2026-05-06") {
-		return res.json({ items: [{ key: 212, status: "INUSE" }] });
+	const partialSheet = PARTIAL_PERIOD_SHEETS[workDate];
+	if (partialSheet) {
+		return res.json({ items: [partialSheet] });
+	}
+	const multiResult = MULTI_RESULT_SEARCHES[workDate];
+	if (multiResult) {
+		const pageSize = Number(req.query.pageSize) || multiResult.length;
+		return res.json({ items: multiResult.slice(0, pageSize) });
 	}
 	// Range searches (beginDateStart/End) carry no workDate and keep answering
 	// with the seeded fixture.
@@ -620,8 +647,19 @@ app.get("/platform/rest/me/time/:id", (req, res) => {
 	if (created) {
 		return res.json(created);
 	}
-	if (key === 212) {
-		return res.json({ key, status: "INUSE" });
+	const partialSheet = Object.values(PARTIAL_PERIOD_SHEETS).find(
+		(sheet) => sheet.key === key,
+	);
+	if (partialSheet) {
+		return res.json(partialSheet);
+	}
+	if (key === 215) {
+		return res.json({
+			key,
+			status: "INUSE",
+			beginDate: "2026-08-01",
+			endDate: "2026-08-15",
+		});
 	}
 	res.json({
 		key,

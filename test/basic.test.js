@@ -479,23 +479,72 @@ describe("Unanet MCP Server Basic Tests", () => {
 			});
 		});
 
-		it("should create nothing when the found timesheet reports no period", async () => {
+		it.each([
+			["no period", "2026-05-06", 212],
+			["only a start date", "2026-06-20", 213],
+			["only an end date", "2026-07-20", 214],
+		])(
+			"should create nothing when the found timesheet reports %s",
+			async (_label, date, foundKey) => {
+				const { createTimesheetTool } = await import(
+					"../dist/tools/timesheet.js"
+				);
+				const createsBefore = await mockCount("timesheet-create-count");
+
+				const result = await createTimesheetTool.handler(
+					{ date, confirm: true },
+					createAuth,
+				);
+
+				expect(result).toMatchObject({
+					success: false,
+					created: false,
+					timesheetKey: foundKey,
+				});
+				expect(result.error).toContain("Could not determine the period");
+				expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+			},
+		);
+
+		it("should refuse when a later search result covers the date", async () => {
 			const { createTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
 			);
 			const createsBefore = await mockCount("timesheet-create-count");
 
+			// Search returns a January sheet first, then the September sheet.
 			const result = await createTimesheetTool.handler(
-				{ date: "2026-05-06", confirm: true },
+				{ date: "2026-09-09", confirm: true },
 				createAuth,
 			);
 
 			expect(result).toMatchObject({
 				success: false,
 				created: false,
-				timesheetKey: 212,
+				timesheetKey: 217,
 			});
-			expect(result.error).toContain("Could not determine the period");
+			expect(result.error).toContain("already exists");
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
+		it("should load the sheet when the search result carries no period", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			// The search result is {key: 215}; only GET reports 2026-08-01..15.
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-08-10", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: false,
+				created: false,
+				timesheetKey: 215,
+			});
+			expect(result.error).toContain("already exists");
 			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
 		});
 

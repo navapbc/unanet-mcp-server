@@ -304,16 +304,24 @@ function isDuplicate(existingTimeslip: any, newTimeslip: any): boolean {
 	);
 }
 
+async function searchTimesheets(
+	client: UnanetClient,
+	workDate: string,
+	pageSize: number,
+): Promise<any[]> {
+	const search = await client.post(
+		"/me/time/search",
+		{ workDate },
+		{ params: { page: 1, pageSize } },
+	);
+	return itemsFromResponse<any>(search.data);
+}
+
 async function searchTimesheet(
 	client: UnanetClient,
 	workDate: string,
 ): Promise<any> {
-	const search = await client.post(
-		"/me/time/search",
-		{ workDate },
-		{ params: { page: 1, pageSize: 1 } },
-	);
-	return itemsFromResponse<any>(search.data)[0];
+	return (await searchTimesheets(client, workDate, 1))[0];
 }
 
 async function findTimesheet(
@@ -586,31 +594,32 @@ export const createTimesheetTool = {
 
 		const client = createUnanetClient(auth);
 		try {
-			const existing = await searchTimesheet(client, args.date);
-			const existingKey = numericKey(existing?.key ?? existing?.id);
-			if (existingKey) {
-				// Search can return a sheet for another period, so load it and
-				// compare periods before calling this a duplicate (same check as
-				// loadWritableTimesheet).
-				const found = await getTimesheet(client, { key: existingKey });
-				if (dateWithinTimesheet(args.date, found)) {
+			// Search can return sheets for other periods, so look at every
+			// result: refuse if any covers the date, fail closed if any period
+			// cannot be determined, and create only when none does.
+			for (const candidate of await searchTimesheets(client, args.date, 25)) {
+				const candidateKey = numericKey(candidate?.key ?? candidate?.id);
+				if (!candidateKey) continue;
+				let sheet = candidate;
+				let period = timesheetPeriod(sheet);
+				if (period.startDate === "unknown" || period.endDate === "unknown") {
+					sheet = await getTimesheet(client, { key: candidateKey });
+					period = timesheetPeriod(sheet);
+				}
+				if (dateWithinTimesheet(args.date, sheet)) {
 					return {
 						success: false,
 						created: false,
 						error: `A timesheet already exists for the period containing ${args.date}.`,
-						timesheetKey: existingKey,
+						timesheetKey: candidateKey,
 					};
 				}
-				const foundPeriod = timesheetPeriod(found);
-				if (
-					foundPeriod.startDate === "unknown" ||
-					foundPeriod.endDate === "unknown"
-				) {
+				if (period.startDate === "unknown" || period.endDate === "unknown") {
 					return {
 						success: false,
 						created: false,
-						error: `Could not determine the period of timesheet ${existingKey} that Unanet returned for ${args.date}, so no timesheet was created. Check the period in Unanet.`,
-						timesheetKey: existingKey,
+						error: `Could not determine the period of timesheet ${candidateKey} that Unanet returned for ${args.date}, so no timesheet was created. Check the period in Unanet.`,
+						timesheetKey: candidateKey,
 					};
 				}
 			}
