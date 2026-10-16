@@ -54,7 +54,7 @@ The two installers behave differently. Describe only the one that matches their 
 
 1. **Unanet base URL** — press Enter to accept `https://navapbc.unanet.biz`.
 2. **Username** — their Unanet username.
-3. **Password** — typed blind (no characters appear). This goes into a `.env` file in the repo folder, permissions 600, git-ignored. It is plaintext on disk; tell them so, and tell them to treat that file like their password.
+3. **Password** — typed blind (no characters appear). This goes into a `.env` file in the repo folder, git-ignored, created with permissions 600. If a `.env` already exists the script leaves it unchanged and skips these prompts, so check it with `ls -l .env` and run `chmod 600 .env` if it is wider. It is plaintext on disk; tell them so, and tell them to treat that file like their password.
 4. **"Enable extra read tools like projects and timesheets?"** — default Y. These are read-only and still limited by their Unanet permissions, so Y is fine. Someone doing invoicing or project work wants them.
 5. **"Enable write-capable tools?"** — default N. Say N unless they specifically need Claude to create, edit, and submit timesheets or expenses and understand that it can change a live government-contract ERP, including submitting a timesheet for approval (one-way). They can flip it later in `.env`.
 
@@ -77,7 +77,7 @@ Mode A: you can also confirm the server boots by running `node dist/index.js` fr
 Close with a short summary, every time:
 
 - What's installed and where (the repo path).
-- Where the credentials live (`<repo>/.env`, local only, plaintext; mode 600 on macOS, default file permissions on Windows) and that the Claude config only has the launch command.
+- Where the credentials live (`<repo>/.env`, local only, plaintext; a `.env` the macOS script creates is mode 600, an existing one keeps whatever mode it had, and on Windows it has default file permissions) and that the Claude config only has the launch command.
 - What the connector can do right now: read their own leave balances, expense reports (including validation and attachments), and personal-development fund status. Their own timesheets, plus project and billing reads, only if the extra read tools are on (default on macOS, off on Windows). Writes are off unless they enabled them.
 - How to turn it off: remove the `unanet` block from `claude_desktop_config.json` and restart Claude Desktop; delete the folder to remove the credentials.
 - Who to ask: Billy Hunt for connector problems, Finance (Sharma Scatliffe) for Unanet permission problems.
