@@ -150,7 +150,7 @@ See [Troubleshooting Guide](TROUBLESHOOTING-WINDOWS.md) for fixes.
 ## 🎯 Best Practices
 
 ### Q: Should I share my setup with others?
-**A:** Share the guide, not your credentials! Each person needs their own API key.
+**A:** Share the guide, not your credentials! Each person installs it with their own Unanet username and password, and the connector inherits exactly their Unanet permissions.
 
 ### Q: How often should I update?
 **A:** Check the GitHub repository monthly for updates. Updates usually add features or fix bugs.

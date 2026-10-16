@@ -1,15 +1,12 @@
+Manual Claude Desktop config (Windows). Credentials live in .env inside the project folder; do NOT put them here.
+
 {
   "mcpServers": {
     "unanet": {
-      "command": "node",
-      "args": ["C:\\path\\to\\unanet-mcp-server\\dist\\index.js"],
-      "env": {
-        "UNANET_USERNAME": "your-username",
-        "UNANET_PASSWORD": "your-password",
-        "UNANET_API_KEY": "your-api-key",
-        "UNANET_FIRM_CODE": "your-firm-code",
-        "UNANET_BASE_URL": "https://your-instance.unanet.com"
-      }
+      "command": "cmd.exe",
+      "args": ["/c", "cd /d \"C:\\path\\to\\unanet-mcp-server\" && node dist\\index.js"]
     }
   }
 }
+
+macOS equivalent: see README.md ("bash -lc" + "cd <repo> && node dist/index.js").

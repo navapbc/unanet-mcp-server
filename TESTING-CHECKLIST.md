@@ -102,9 +102,8 @@ Track response times:
 ## 🚨 Common Issues & Solutions
 
 ### "Authentication failed"
-- Verify credentials in .env match exactly
-- Check API key hasn't expired
-- Ensure user has API access enabled
+- Verify credentials in .env match exactly (same login as the Unanet website)
+- 401 = bad username/password/URL; 403 = your Unanet account lacks that permission
 
 ### "Resource not found"
 - Project/resource IDs are case-sensitive

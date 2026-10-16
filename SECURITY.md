@@ -15,10 +15,10 @@ Please do NOT open public issues for security vulnerabilities.
 ### For Users
 
 1. **Credentials**
-   - Never commit `.env` files
-   - Use read-only API users when possible
-   - Rotate API keys regularly
-   - Use environment variables, not hardcoded values
+   - Never commit `.env` files (it is git-ignored; `setup-mac.sh` writes it mode 600)
+   - Your Unanet password is stored in plaintext in `.env` on your machine — treat that file like your password
+   - Never share a service or integration account; each person uses their own Unanet login
+   - Keep write tools disabled unless you need them and understand the risk
 
 2. **Access Control**
    - Limit MCP server to localhost only

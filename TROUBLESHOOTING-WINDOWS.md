@@ -138,15 +138,14 @@ Connection works but Unanet rejects login
    - Try logging into Unanet web interface
    - Confirm username/password work
 
-2. **Check API Key:**
-   - API key is different from password
-   - Get from Unanet administrator
-   - Usually looks like: `abc123-def456-ghi789`
+2. **Verify URL Format:**
+   - Must be the origin only: `https://navapbc.unanet.biz` ✓
+   - Not: `https://navapbc.unanet.biz/platform/rest` ✗
+   - No trailing slash
 
-3. **Verify URL Format:**
-   - Must include `https://`
-   - No trailing slash: `https://company.unanet.com` ✓
-   - Not: `https://company.unanet.com/` ✗
+3. **Getting a 403 instead of 401?**
+   - Your login worked but your Unanet account lacks permission for that action
+   - This is a Unanet access question for Finance, not a connector problem
 
 ---
 

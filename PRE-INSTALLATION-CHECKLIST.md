@@ -1,94 +1,44 @@
 # Pre-Installation Checklist
 
-## 🎯 Before You Begin
+Keep this open while you set up. Setup takes about 15 minutes.
 
-Print this checklist or keep it open on your phone while setting up.
+## What you need
 
-### ✅ Required Information
+- [ ] **Your Unanet login** — the same username and password you use at https://navapbc.unanet.biz
+  - That is all. There is **no API key, firm code, or special access** to request. The connector logs in as you and can only do what your Unanet account can already do in the website.
+  - Do not write your password down here or anywhere else. You will type it once, into a file that stays on your computer.
 
-Gather these from your Unanet administrator or IT department:
+- [ ] **Claude Desktop** installed and signed in — https://claude.ai/download
 
-- [ ] **Unanet Username**
-  - Example: `jsmith`
-  - Your username: _______________________
+- [ ] **Node.js 20 or newer** — https://nodejs.org/ (pick the LTS installer). The setup script will tell you if it is missing.
 
-- [ ] **Unanet Password**
-  - Your regular Unanet login password
-  - Your password: _______________________
+- [ ] **A copy of this repository** on your computer
+  - Nava GitHub: https://github.com/navapbc/unanet-mcp-server (requires access to the `navapbc` org — ask Billy Hunt if you do not have it)
 
-- [ ] **API Key**
-  - Looks like: `abc123-def456-ghi789`
-  - Your API key: _______________________
+- [ ] **About 500 MB of free disk space** and an internet connection
 
-- [ ] **Firm Code**
-  - Example: `ACME001`
-  - Your firm code: _______________________
+## Which guide to follow
 
-- [ ] **Unanet URL**
-  - Example: `https://acme.unanet.com`
-  - Your URL: _______________________
+| You are on | Run | Then read |
+| --- | --- | --- |
+| macOS | `./setup-mac.sh` in the repo folder | [README](README.md) |
+| Windows 10/11 | `setup-windows.bat` | [Windows Setup Guide](README-WINDOWS.md), [Visual Guide](SETUP-VISUAL-GUIDE.md) |
 
-### ✅ System Requirements
+Both scripts create a local `.env` file for your credentials, build the server, and point Claude Desktop at it. Your password is never copied into the Claude Desktop config.
 
-Check that you have:
+## What you do NOT need
 
-- [ ] **Windows 10 or Windows 11**
-  - Check: Right-click Start button → System
-  
-- [ ] **Claude Desktop installed**
-  - Download from: https://claude.ai/download
-  - Already using Claude? You're good!
+- Programming knowledge
+- An API key, firm code, service account, or "REST API access"
+- Anyone in Finance, IT, or Data to grant you anything (unless the connector later returns a 403 — that means your Unanet account lacks a permission, and Finance can tell you whether you should have it)
+- To disable antivirus or change any security settings. If something says "Access Denied", stop and ask for help instead.
 
-- [ ] **Internet connection**
-  - Needed for downloading files
+## If you get stuck
 
-- [ ] **Administrator access** (optional but helpful)
-  - Can you install programs on this computer?
-  - If not, you may need IT help
+1. [Troubleshooting Guide](TROUBLESHOOTING-WINDOWS.md) (most entries apply to macOS too)
+2. [FAQ](FAQ.md)
+3. Ask Billy Hunt
 
-- [ ] **15 minutes of time**
-  - Uninterrupted is best
+## Ready?
 
-### ✅ Space Requirements
-
-- [ ] **500 MB free disk space**
-  - Check: Open File Explorer → This PC → Look at C: drive
-
-### 📋 Optional but Helpful
-
-- [ ] **A text editor** (Notepad is fine)
-- [ ] **Your IT support contact info**
-- [ ] **A cup of coffee** ☕
-
-## 🚫 What You DON'T Need
-
-- ❌ Programming knowledge
-- ❌ Command line experience  
-- ❌ Special permissions (beyond your Unanet access)
-
-## 📱 Quick Support Contacts
-
-Before starting, know who to contact if you need help:
-
-- **Unanet Administrator:** _______________________
-- **IT Support:** _______________________
-- **Phone/Email:** _______________________
-
-## 🎯 Ready to Start?
-
-If you checked all the required boxes above, you're ready! 
-
-1. Go to the [Windows Setup Guide](README-WINDOWS.md)
-2. Follow the steps in order
-3. Take your time - there's no rush
-
-## 💡 Pro Tips
-
-1. **Take screenshots** as you go (Windows+Shift+S)
-2. **Copy your credentials** to a temporary notepad file for easy pasting
-3. **Close other programs** to avoid interruptions
-4. **Disable antivirus temporarily** if you get "Access Denied" errors
-
----
-
-**Remember:** This is a one-time setup. Once it's done, you'll have powerful Unanet access directly in Claude!
+Open a terminal (macOS) or double-click the `.bat` file (Windows) and run the setup script. When it finishes, fully quit and reopen Claude Desktop, then ask Claude: *"What are my Unanet leave balances?"* If the number matches what you see in Unanet, you are done.

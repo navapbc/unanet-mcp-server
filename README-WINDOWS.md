@@ -7,12 +7,8 @@ This guide will help you connect Claude Desktop to your Unanet GovCon ERP system
 You will need:
 - ✅ A Windows computer (Windows 10 or 11)
 - ✅ Claude Desktop installed and working
-- ✅ Your Unanet login credentials:
-  - Username
-  - Password
-  - API Key
-  - Firm Code
-  - Your Unanet URL (looks like: https://yourcompany.unanet.com)
+- ✅ Your Unanet login credentials — the same username and password you use at https://navapbc.unanet.biz
+  - No API key, firm code, or special access is needed. The connector can only do what your Unanet account can already do.
 - ✅ About 15 minutes
 
 ## 🚀 Step-by-Step Installation
@@ -66,18 +62,14 @@ Node.js is required to run the Unanet connector.
    ```
    UNANET_USERNAME=your-username-here
    UNANET_PASSWORD=your-password-here
-   UNANET_API_KEY=your-api-key-here
-   UNANET_FIRM_CODE=your-firm-code-here
-   UNANET_BASE_URL=https://your-company.unanet.com
+   UNANET_BASE_URL=https://navapbc.unanet.biz
    ```
-   - Replace each `your-xxx-here` with your actual information
+   - Replace the username and password with your normal Unanet login; leave the URL alone
    - **Save the file** (Ctrl+S) and close Notepad
 
 5. **Configure Claude Desktop**:
    - When asked "Would you like to automatically configure Claude Desktop?", type `Y` and press Enter
-   - When asked "Would you like to edit the Claude config now?", type `Y` and press Enter
-   - In the file that opens, find the Unanet section and update it with your credentials (same as step 4)
-   - **Save the file** (Ctrl+S) and close Notepad
+   - The script points Claude Desktop at this folder. Your password stays in `.env` and is never copied into the Claude config.
 
 ### Step 4: Restart Claude Desktop (1 minute)
 

@@ -104,8 +104,6 @@ function loadAuthFromEnv(): UnanetAuth {
 	return {
 		username: process.env.UNANET_USERNAME || "",
 		password: process.env.UNANET_PASSWORD || "",
-		apiKey: process.env.UNANET_API_KEY || undefined,
-		firmCode: process.env.UNANET_FIRM_CODE || undefined,
 		baseUrl: normalizedBaseUrl,
 		appName: process.env.UNANET_APP_NAME || DEFAULT_UNANET_APP_NAME,
 	};

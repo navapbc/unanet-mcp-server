@@ -9,11 +9,11 @@ const DEFAULT_PLATFORM_TOKEN_TTL_MS = 15 * 60 * 1000;
 export interface UnanetAuth {
 	username: string;
 	password: string;
-	apiKey?: string;
-	firmCode?: string;
 	baseUrl: string;
 	appName?: string;
 }
+
+export type UnanetClient = AxiosInstance;
 
 export interface BaseUrlValidationOptions {
 	allowInsecureLocalMock?: boolean;
@@ -150,19 +150,6 @@ export function validateAuth(
 	validateUnanetBaseUrl(auth.baseUrl, options);
 }
 
-export function validateLegacyAuth(auth: UnanetAuth): void {
-	if (!auth.apiKey) {
-		throw new Error(
-			"UNANET_API_KEY environment variable is required for legacy API tools",
-		);
-	}
-	if (!auth.firmCode) {
-		throw new Error(
-			"UNANET_FIRM_CODE environment variable is required for legacy API tools",
-		);
-	}
-}
-
 function safeUrlForLog(url?: string): string {
 	return (url || "")
 		.replace(/password=([^&]+)/gi, "password=***")
@@ -245,7 +232,7 @@ function addSafeInterceptors(client: AxiosInstance): AxiosInstance {
 	return client;
 }
 
-export function createUnanetClient(auth: UnanetAuth): AxiosInstance {
+export function createUnanetClient(auth: UnanetAuth): UnanetClient {
 	const baseURL = validateUnanetBaseUrl(auth.baseUrl, {
 		allowInsecureLocalMock: isEnabled(
 			process.env.UNANET_ALLOW_INSECURE_LOCAL_MOCK,
