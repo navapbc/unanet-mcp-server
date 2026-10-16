@@ -223,6 +223,34 @@ function unanetErrorDetail(data: unknown): string {
 	return ` Unanet says: ${[code, description].filter(Boolean).join(" — ")}`;
 }
 
+/**
+ * The machine-readable part of a client error: Unanet's error code(s) and the
+ * names (keys) in its `context`, which the spec says reference the request
+ * parameters or body fields behind a validation failure. Unanet says clients
+ * should show users the code, and that `description` and the context values
+ * are for its support staff, so neither is returned here. The keys are shown
+ * as "context", not as field names: the spec examples are not consistent about
+ * what they hold.
+ */
+function unanetErrorCodes(data: unknown): string {
+	const errors = (data as { errors?: unknown } | null)?.errors;
+	if (!Array.isArray(errors)) return "";
+	const codes = new Set<string>();
+	const fields = new Set<string>();
+	for (const entry of errors.slice(0, 5)) {
+		const { code, context } = (entry ?? {}) as { code?: unknown; context?: unknown };
+		if (typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code)) codes.add(code);
+		if (context && typeof context === "object") {
+			for (const key of Object.keys(context).slice(0, 5)) {
+				if (/^[\w.[\]]{1,60}$/.test(key)) fields.add(key);
+			}
+		}
+	}
+	if (codes.size === 0) return "";
+	const where = fields.size ? ` (context: ${[...fields].slice(0, 5).join(", ")})` : "";
+	return ` Unanet error code: ${[...codes].join(", ")}${where}`;
+}
+
 function handleApiError(error: any): never {
 	const method = String(error.config?.method ?? "").toLowerCase();
 	if (error.response) {
@@ -254,7 +282,14 @@ function handleApiError(error: any): never {
 					method,
 				);
 			default:
-				throw apiError(`API error: ${status} ${statusText}`, status, method);
+				// Client errors (400, 409, 422...) show Unanet's error code and the names
+				// in its context; never its free-text description or context values.
+				// Server errors stay generic.
+				throw apiError(
+					`API error: ${status} ${statusText}${status < 500 ? unanetErrorCodes(error.response.data) : ""}`,
+					status,
+					method,
+				);
 		}
 	}
 

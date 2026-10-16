@@ -170,7 +170,10 @@ app.get("/platform/rest/__test/unauthorized", (_req, res) =>
 	res.status(401).json({ errors: [{ code: "UNAUTHORIZED", description: "Session expired" }] }),
 );
 app.all("/platform/rest/__test/service-unavailable", (_req, res) =>
-	res.status(503).json({ error: "Service unavailable" }),
+	res.status(503).json({
+		error: "Service unavailable",
+		errors: [{ code: "UNAVAILABLE", description: "internal detail for support staff" }],
+	}),
 );
 
 // One-shot fault for the next mutating request to any route registered after
@@ -395,6 +398,37 @@ app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
 	if (!expense) return res.status(404).json({ error: "Expense not found" });
 	if (expense.status !== "INUSE") {
 		return res.status(400).json({ error: "Expense is not editable" });
+	}
+	// Type 9998 stands for an expense type that needs a wizard: Unanet rejects the
+	// line with a 400 and its own error body (context shaped like the spec example,
+	// where the field name is the VALUE) when none is sent. Type 9997 is rejected
+	// with a 400 whatever is sent.
+	if (
+		(req.body?.expenseTypeKey === 9998 && !req.body?.wizard) ||
+		req.body?.expenseTypeKey === 9997
+	) {
+		return res.status(400).json({
+			errors: [
+				{
+					code: "VALIDATION_MUST_NOT_BE_NULL",
+					description: "SUPPORT-ONLY free text about the wizard",
+					context: { fieldName: "wizard", "secret value": "do not echo" },
+				},
+			],
+		});
+	}
+	// Type 9996 is rejected with a 409, which has nothing to do with a wizard.
+	if (req.body?.expenseTypeKey === 9996) {
+		return res.status(409).json({ errors: [{ code: "CONFLICT_GENERIC" }] });
+	}
+	// Type 9995: one error whose "code" is free text instead of a token, and one valid.
+	if (req.body?.expenseTypeKey === 9995) {
+		return res.status(400).json({
+			errors: [
+				{ code: "free text: support-only detail", context: { fieldName: "x" } },
+				{ code: "VALIDATION_GENERIC" },
+			],
+		});
 	}
 	const detail = {
 		key: nextExpenseDetailKey++,

@@ -787,9 +787,11 @@ export const addExpenseDetailTool = {
 		vendorName: z.string().optional(),
 		receiptIncluded: z.boolean().optional(),
 		noReceiptReason: z.string().optional(),
-		wizard: wizardSchema.describe(
-			"Unanet expense wizard payload, including a discriminator `type`.",
-		),
+		wizard: wizardSchema
+			.optional()
+			.describe(
+				"Unanet expense wizard payload with a discriminator `type` (AIR, LODGING_PER_DIEM, MIE_PER_DIEM, MILEAGE, EMP_BUS_MTG...). Provide it for expense types whose reference-data wizardType is set. Plain types (wizardType null, such as parking) have no wizard; omit it.",
+			),
 		validateAfterAdd: z.boolean().optional().default(true),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
@@ -823,7 +825,7 @@ export const addExpenseDetailTool = {
 				vendorName: args.vendorName,
 				receiptIncluded: args.receiptIncluded,
 				noReceiptReason: args.noReceiptReason,
-				wizard: args.wizard,
+				...(args.wizard ? { wizard: args.wizard } : {}),
 			};
 			const response = await client.post(
 				`/me/expenses/${args.expenseId}/details`,
@@ -845,7 +847,13 @@ export const addExpenseDetailTool = {
 					"Expense detail added to draft. Review and submit manually in Unanet when ready.",
 			};
 		} catch (error: any) {
-			return { success: false, error: error.message };
+			// A rejected line with no wizard may be a type that needs one. Unanet's own
+			// error text is limited to its code, so say what to check.
+			const hint =
+				error?.status === 400 && !args.wizard
+					? " If this expense type has a wizardType in unanet_get_expense_reference_data, provide `wizard`."
+					: "";
+			return { success: false, error: `${error.message}${hint}` };
 		}
 	},
 };
