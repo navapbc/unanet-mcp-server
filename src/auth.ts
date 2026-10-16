@@ -225,9 +225,12 @@ function unanetErrorDetail(data: unknown): string {
 
 /**
  * The machine-readable part of a client error: Unanet's error code(s) and the
- * names of the request fields it points at (the keys of `context`). Unanet
- * says clients should show users the code, and that `description` and the
- * context values are for its support staff, so neither is returned here.
+ * names (keys) in its `context`, which the spec says reference the request
+ * parameters or body fields behind a validation failure. Unanet says clients
+ * should show users the code, and that `description` and the context values
+ * are for its support staff, so neither is returned here. The keys are shown
+ * as "context", not as field names: the spec examples are not consistent about
+ * what they hold.
  */
 function unanetErrorCodes(data: unknown): string {
 	const errors = (data as { errors?: unknown } | null)?.errors;
@@ -244,7 +247,7 @@ function unanetErrorCodes(data: unknown): string {
 		}
 	}
 	if (codes.size === 0) return "";
-	const where = fields.size ? ` (fields: ${[...fields].slice(0, 5).join(", ")})` : "";
+	const where = fields.size ? ` (context: ${[...fields].slice(0, 5).join(", ")})` : "";
 	return ` Unanet error code: ${[...codes].join(", ")}${where}`;
 }
 

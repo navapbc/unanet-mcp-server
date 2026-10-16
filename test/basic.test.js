@@ -1181,7 +1181,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 			);
 			expect(missingWizard.success).toBe(false);
 			expect(missingWizard.error).toContain("VALIDATION_MUST_NOT_BE_NULL");
-			expect(missingWizard.error).toContain("fields: wizard");
+			expect(missingWizard.error).toContain("(context: wizard)");
 			expect(missingWizard.error).not.toContain("SUPPORT-ONLY");
 			expect(missingWizard.error).not.toContain("do not echo");
 			expect(missingWizard.error).not.toContain("secret value");
