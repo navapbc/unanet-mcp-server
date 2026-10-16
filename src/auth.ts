@@ -282,9 +282,9 @@ function handleApiError(error: any): never {
 					method,
 				);
 			default:
-				// Client errors (400, 409, 422...) show Unanet's error code and the field
-				// names it points at; never its free-text description. Server errors stay
-				// generic.
+				// Client errors (400, 409, 422...) show Unanet's error code and the names
+				// in its context; never its free-text description or context values.
+				// Server errors stay generic.
 				throw apiError(
 					`API error: ${status} ${statusText}${status < 500 ? unanetErrorCodes(error.response.data) : ""}`,
 					status,

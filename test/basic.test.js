@@ -1174,7 +1174,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect("wizard" in stored).toBe(false);
 
 			// A type that needs a wizard: the caller gets Unanet's error code and the
-			// field it points at, not its support-staff description or context values.
+			// context key, not its support-staff description or context values.
 			const missingWizard = await addExpenseDetailTool.handler(
 				{ ...plainArgs, expenseTypeKey: 9998 },
 				auth,
