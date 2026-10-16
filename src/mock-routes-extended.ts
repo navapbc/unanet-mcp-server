@@ -12,6 +12,9 @@ export interface MockState {
 	nextAttachmentKey: () => number;
 }
 
+const oversizedName = (id: number) =>
+	id === 998 ? "x".repeat(250_000) : id === 997 ? "x".repeat(199_800) : "New Jersey Department of Labor";
+
 const paged = (items: any[]) => ({
 	items,
 	page: 1,
@@ -284,6 +287,10 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		if (vendors.includes("FLAT")) {
 			return res.json([{ key: 3, vendor: "THREE", status: "AVAILABLE" }, { key: 4, vendor: "FOUR", status: "AVAILABLE" }]);
 		}
+		// Unsupported shapes: a bare string, an object without items, and a mixed array.
+		if (vendors.includes("SCALAR")) return res.json("unexpected response");
+		if (vendors.includes("OBJECT")) return res.json({ message: "no items here" });
+		if (vendors.includes("MIXED")) return res.json([paged([{ key: 1 }]), { key: 2 }]);
 		res.json(paged(status === "USED" ? [] : [{ key: 8801, vendor: "UBER", amount: 23.4, expenseDate: "2026-05-18", status: "AVAILABLE" }]));
 	});
 	app.put("/platform/rest/me/expenses/:id", (req, res) => {
@@ -383,8 +390,9 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		res.json({
 			key: Number(req.params.id),
 			code: "NJDOL",
-			// Oversized fixture: id 998 returns one object that is itself over the cap.
-			name: Number(req.params.id) === 998 ? "x".repeat(250_000) : "New Jersey Department of Labor",
+			// Oversized fixtures: id 998 is one object over the cap; id 997 has data just under it,
+			// so only the wrapper pushes the whole result past 200,000 characters.
+			name: oversizedName(Number(req.params.id)),
 			active: true,
 			federalTaxId: "12-3456789",
 			federalTaxIdType: "EIN",

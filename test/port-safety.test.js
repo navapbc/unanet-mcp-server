@@ -1,6 +1,6 @@
 /**
- * Safety checks for the attachment file helpers, the optional login customer
- * id, and the Unanet error detail on 401/403. Runs against the mock server.
+ * Safety checks for the attachment file helpers and the optional login
+ * customer id. Runs against the mock server.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";

@@ -524,18 +524,31 @@ export const searchImportedExpensesTool = {
 				params: { page: args.page, pageSize: args.pageSize },
 			});
 			// The spec declares an array of paged envelopes; also accept one
-			// envelope or a flat array of rows. Every envelope is read.
+			// envelope or a flat array of rows. Every envelope is read, and any
+			// other shape is an error rather than an empty result.
 			const data = response.data;
-			const isEnvelope = (entry: any) =>
-				entry && typeof entry === "object" && ("items" in entry || "pageCount" in entry || "resultCount" in entry);
-			const envelopes = Array.isArray(data) && data.length > 0 && data.every(isEnvelope) ? data : null;
-			const items = envelopes
-				? envelopes.flatMap((envelope: any) => itemsFromResponse<any>(envelope))
-				: itemsFromResponse<any>(data);
+			const isObject = (entry: unknown) => entry !== null && typeof entry === "object" && !Array.isArray(entry);
+			const isEnvelope = (entry: any) => isObject(entry) && Array.isArray(entry.items);
+			let envelopes: any[] | null = null;
+			let rows: any[] | null = null;
+			if (Array.isArray(data) && data.length > 0 && data.every(isEnvelope)) {
+				envelopes = data;
+			} else if (Array.isArray(data) && data.every((entry: any) => isObject(entry) && !isEnvelope(entry))) {
+				rows = data;
+			} else if (isEnvelope(data)) {
+				envelopes = [data];
+			}
+			if (!envelopes && !rows) {
+				return {
+					success: false,
+					error: "Unexpected response shape from the imported-expense search; expected an array of paged envelopes or rows.",
+				};
+			}
+			const items = envelopes ? envelopes.flatMap((envelope) => itemsFromResponse<any>(envelope)) : (rows ?? []);
 			const paging = envelopes
 				? envelopes.length === 1
 					? pageInfo(envelopes[0])
-					: envelopes.map((envelope: any) => pageInfo(envelope))
+					: envelopes.map((envelope) => pageInfo(envelope))
 				: pageInfo(data);
 			return { success: true, count: items.length, paging, importedExpenses: items };
 		} catch (error) {

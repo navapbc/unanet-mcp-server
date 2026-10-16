@@ -223,6 +223,19 @@ describe("hardening", () => {
 
 			const forced = await deleteTimesheetTool.handler({ timesheetId: 222, allowNonEmpty: true, confirm: true }, auth);
 			expect(forced.success).toBe(true);
+
+			// Timeslips with missing or unusable hours are not proof of an empty sheet.
+			const afterRefusals = (await mockGet("/__test/deleted-timesheets")).keys;
+			for (const timesheetId of [223, 224]) {
+				const refused = await deleteTimesheetTool.handler({ timesheetId, allowNonEmpty: false, confirm: true }, auth);
+				expect(refused.success, `timesheet ${timesheetId}`).toBe(false);
+				expect(refused.error).toContain("Could not establish");
+			}
+			expect((await mockGet("/__test/deleted-timesheets")).keys).toEqual(afterRefusals);
+
+			// An empty list with a zero total is proven empty and can be deleted.
+			const empty = await deleteTimesheetTool.handler({ timesheetId: 225, allowNonEmpty: false, confirm: true }, auth);
+			expect(empty.success).toBe(true);
 		});
 	});
 
@@ -318,6 +331,16 @@ describe("hardening", () => {
 			expect(typeof result.data).toBe("string");
 			expect(JSON.stringify(result.data).length).toBeLessThanOrEqual(200_000);
 		});
+
+		it("bounds the whole returned value, not only data, at the cap boundary", async () => {
+			const { apiReadTool } = await import("../dist/tools/api.js");
+			for (const id of [997, 998, 999]) {
+				const path = id === 999 ? "/rest/projects/{id}/notes" : "/rest/organizations/{id}";
+				const result = await apiReadTool.handler({ method: "GET", path, pathParams: { id } }, auth);
+				expect(result.success).toBe(true);
+				expect(JSON.stringify(result).length, `id ${id}`).toBeLessThanOrEqual(200_000);
+			}
+		});
 	});
 
 	// ---- Spec-shaped responses -----------------------------------------------------
@@ -349,6 +372,12 @@ describe("hardening", () => {
 			expect(flat.importedExpenses.map((row) => row.key)).toEqual([3, 4]);
 			const single = await searchImportedExpensesTool.handler(base, auth);
 			expect(single.importedExpenses[0].key).toBe(8801);
+
+			for (const vendor of ["SCALAR", "OBJECT", "MIXED"]) {
+				const bad = await searchImportedExpensesTool.handler({ ...base, vendors: [vendor] }, auth);
+				expect(bad.success, vendor).toBe(false);
+				expect(bad.error).toContain("Unexpected response shape");
+			}
 		});
 
 		it("keeps the text and location of structured validation messages", async () => {

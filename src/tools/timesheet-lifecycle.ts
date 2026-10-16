@@ -357,14 +357,16 @@ export const deleteTimesheetTool = {
 				};
 			}
 			// Emptiness must be established, not assumed. Take the larger of the
-			// hours summed from timeslips (only when the list is present) and the
-			// summary total, and refuse when neither is available.
-			const slipHours = Array.isArray(detail?.timeslips)
-				? detail.timeslips.reduce(
-						(sum: number, timeslip: any) => sum + (Number(timeslip.hoursWorked) || 0),
-						0,
-					)
+			// hours summed from timeslips (only when the list is present and every
+			// entry has a usable number; hoursWorked is optional in the spec) and
+			// the summary total, and refuse when neither is available.
+			const slipValues = Array.isArray(detail?.timeslips)
+				? detail.timeslips.map((timeslip: any) => toNumberOrNull(timeslip?.hoursWorked))
 				: null;
+			const slipHours =
+				slipValues && slipValues.every((value: number | null) => value !== null)
+					? slipValues.reduce((sum: number, value: number | null) => sum + (value ?? 0), 0)
+					: null;
 			const known = [slipHours, toNumberOrNull(detail?.hours)].filter(
 				(value): value is number => value !== null,
 			);

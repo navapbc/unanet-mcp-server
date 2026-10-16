@@ -253,7 +253,7 @@ const selfServiceReadTools = [
 	pingTool,
 ];
 
-// Tier 2 (UNANET_ENABLE_EXTENDED_READ_TOOLS / legacy flag): org-level reads.
+// Tier 2 (UNANET_ENABLE_EXTENDED_READ_TOOLS): org-level reads.
 const extendedReadTools = [
 	getProjectsTool,
 	getProjectDetailsTool,

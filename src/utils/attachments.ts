@@ -12,7 +12,7 @@ import {
 	openSync,
 	readFileSync,
 	realpathSync,
-	writeSync,
+	writeFileSync,
 } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { z } from "zod";
@@ -259,7 +259,8 @@ export function saveAttachmentToDisk(
 			return { ok: false, error: `Refusing ${target}: it is not a regular file.` };
 		}
 		ftruncateSync(descriptor, 0);
-		writeSync(descriptor, buffer);
+		// writeFileSync on a descriptor loops until the buffer is fully written.
+		writeFileSync(descriptor, buffer);
 	} catch (writeError: any) {
 		if (writeError.code === "EEXIST") {
 			return {

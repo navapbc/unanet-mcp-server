@@ -717,6 +717,9 @@ app.get("/platform/rest/me/time/:id", (req, res) => {
 	// Delete-guard fixtures: a total with no timeslips, and neither.
 	if (key === 221) return res.json({ key, status: "INUSE", hours: 8 });
 	if (key === 222) return res.json({ key, status: "INUSE" });
+	if (key === 223) return res.json({ key, status: "INUSE", timeslips: [{ key: 1 }] });
+	if (key === 224) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: "n/a" }] });
+	if (key === 225) return res.json({ key, status: "INUSE", hours: 0, timeslips: [] });
 	const partialSheet = Object.values(PARTIAL_PERIOD_SHEETS).find(
 		(sheet) => sheet.key === key,
 	);

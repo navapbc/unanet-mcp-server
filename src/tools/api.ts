@@ -202,11 +202,12 @@ function fillPath(
 const MAX_RESPONSE_CHARS = 200_000;
 
 // Guard the MCP transport against multi-megabyte responses: cap long arrays
-// (top level or under items/) and mark the result as truncated.
-function truncateResponse(data: any): { data: any; truncated: boolean } {
+// (top level or under items/) and mark the result as truncated. `limit` is the
+// serialized-size budget for `data` alone; callers subtract their wrapper.
+function truncateResponse(data: any, limit: number): { data: any; truncated: boolean } {
 	const serialized = JSON.stringify(data);
-	if (!serialized || serialized.length <= MAX_RESPONSE_CHARS) return { data, truncated: false };
-	const fits = (value: unknown) => JSON.stringify(value).length <= MAX_RESPONSE_CHARS;
+	if (!serialized || serialized.length <= limit) return { data, truncated: false };
+	const fits = (value: unknown) => JSON.stringify(value).length <= limit;
 	const shrink = (build: (items: any[]) => unknown, items: any[]) => {
 		let kept = items.length;
 		while (kept > 0 && !fits(build(items.slice(0, kept)))) kept = Math.floor(kept / 2);
@@ -219,10 +220,10 @@ function truncateResponse(data: any): { data: any; truncated: boolean } {
 			: null;
 	if (candidate !== null && fits(candidate)) return { data: candidate, truncated: true };
 	// A single oversized item or envelope: return a bounded text preview whose
-	// own JSON encoding fits the cap.
-	let length = Math.min(serialized.length, MAX_RESPONSE_CHARS - 2);
+	// own JSON encoding fits the budget.
+	let length = Math.max(0, Math.min(serialized.length, limit - 2));
 	let preview = `${serialized.slice(0, length)}…`;
-	while (!fits(preview)) {
+	while (length > 0 && !fits(preview)) {
 		length = Math.floor(length * 0.9);
 		preview = `${serialized.slice(0, length)}…`;
 	}
@@ -380,10 +381,21 @@ export const apiReadTool = {
 				params: args.query,
 				data: op.method === "GET" ? undefined : (args.body ?? {}),
 			});
-			const { data, truncated } = truncateResponse(redactSensitiveFields(response.data));
+			const operation = summarizeOperation(op);
+			const wrapperChars = JSON.stringify({
+				success: true,
+				operation,
+				status: response.status,
+				truncated: true,
+				data: "",
+			}).length;
+			const { data, truncated } = truncateResponse(
+				redactSensitiveFields(response.data),
+				MAX_RESPONSE_CHARS - wrapperChars,
+			);
 			return {
 				success: true,
-				operation: summarizeOperation(op),
+				operation,
 				status: response.status,
 				truncated,
 				data,
