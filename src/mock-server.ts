@@ -400,17 +400,26 @@ app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
 		return res.status(400).json({ error: "Expense is not editable" });
 	}
 	// Type 9998 stands for an expense type that needs a wizard: Unanet rejects the
-	// line with a 400 and its own error body when none is sent.
-	if (req.body?.expenseTypeKey === 9998 && !req.body?.wizard) {
+	// line with a 400 and its own error body (context shaped like the spec example,
+	// where the field name is the VALUE) when none is sent. Type 9997 is rejected
+	// with a 400 whatever is sent.
+	if (
+		(req.body?.expenseTypeKey === 9998 && !req.body?.wizard) ||
+		req.body?.expenseTypeKey === 9997
+	) {
 		return res.status(400).json({
 			errors: [
 				{
 					code: "VALIDATION_MUST_NOT_BE_NULL",
 					description: "SUPPORT-ONLY free text about the wizard",
-					context: { wizard: "null", "secret value": "do not echo" },
+					context: { fieldName: "wizard", "secret value": "do not echo" },
 				},
 			],
 		});
+	}
+	// Type 9996 is rejected with a 409, which has nothing to do with a wizard.
+	if (req.body?.expenseTypeKey === 9996) {
+		return res.status(409).json({ errors: [{ code: "CONFLICT_GENERIC" }] });
 	}
 	const detail = {
 		key: nextExpenseDetailKey++,

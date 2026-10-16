@@ -847,7 +847,13 @@ export const addExpenseDetailTool = {
 					"Expense detail added to draft. Review and submit manually in Unanet when ready.",
 			};
 		} catch (error: any) {
-			return { success: false, error: error.message };
+			// A rejected line with no wizard may be a type that needs one. Unanet's own
+			// error text is limited to its code, so say what to check.
+			const hint =
+				error?.status === 400 && !args.wizard
+					? " If this expense type has a wizardType in unanet_get_expense_reference_data, provide `wizard`."
+					: "";
+			return { success: false, error: `${error.message}${hint}` };
 		}
 	},
 };

@@ -1174,17 +1174,37 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect("wizard" in stored).toBe(false);
 
 			// A type that needs a wizard: the caller gets Unanet's error code and the
-			// context key, not its support-staff description or context values.
+			// context key (not its support-staff description or context values), plus a
+			// hint to check the type's wizardType because the key alone does not say.
 			const missingWizard = await addExpenseDetailTool.handler(
 				{ ...plainArgs, expenseTypeKey: 9998 },
 				auth,
 			);
 			expect(missingWizard.success).toBe(false);
 			expect(missingWizard.error).toContain("VALIDATION_MUST_NOT_BE_NULL");
-			expect(missingWizard.error).toContain("(context: wizard)");
+			expect(missingWizard.error).toContain("(context: fieldName)");
+			expect(missingWizard.error).toContain("provide `wizard`");
 			expect(missingWizard.error).not.toContain("SUPPORT-ONLY");
 			expect(missingWizard.error).not.toContain("do not echo");
 			expect(missingWizard.error).not.toContain("secret value");
+
+			// The hint is only for a rejected line sent without a wizard.
+			const rejectedWithWizard = await addExpenseDetailTool.handler(
+				{ ...plainArgs, expenseTypeKey: 9997, wizard: { type: "AIR" } },
+				auth,
+			);
+			expect(rejectedWithWizard.success).toBe(false);
+			expect(rejectedWithWizard.error).toContain("VALIDATION_MUST_NOT_BE_NULL");
+			expect(rejectedWithWizard.error).not.toContain("provide `wizard`");
+
+			// Nor for other statuses, which have nothing to do with a wizard.
+			const conflict = await addExpenseDetailTool.handler(
+				{ ...plainArgs, expenseTypeKey: 9996 },
+				auth,
+			);
+			expect(conflict.success).toBe(false);
+			expect(conflict.error).toContain("CONFLICT_GENERIC");
+			expect(conflict.error).not.toContain("provide `wizard`");
 
 			const validation = await validateExpenseReportTool.handler(
 				{ expenseId: draft.expenseId },
