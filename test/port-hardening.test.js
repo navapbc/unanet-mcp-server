@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "child_process";
-import { mkdtempSync, writeFileSync, existsSync, readFileSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clearPlatformTokenCache, createUnanetClient, isOutcomeUnknown } from "../dist/auth.js";
@@ -443,6 +443,8 @@ describe("hardening", () => {
 				for (const overwrite of [false, true]) {
 					const result = saveAttachmentToDisk(attachment, join(dir, target), { overwrite });
 					expect(result.ok, `${target} overwrite=${overwrite}`).toBe(false);
+					// Refused by the path check itself, not by a later open() failure.
+					expect(result.error, `${target} overwrite=${overwrite}`).toContain("not a regular file");
 				}
 			}
 			expect(readFileSync(realFile, "utf8")).toBe("original");
@@ -451,6 +453,18 @@ describe("hardening", () => {
 			expect(saveAttachmentToDisk(attachment, realFile).ok).toBe(false);
 			expect(saveAttachmentToDisk(attachment, realFile, { overwrite: true }).ok).toBe(true);
 			expect(readFileSync(realFile, "utf8")).toBe("payload");
+		});
+
+		it("refuses a directory as the destination at the path check", () => {
+			const dir = mkdtempSync(join(tmpdir(), "unanet-dir-"));
+			mkdirSync(join(dir, "folder.pdf"));
+			const result = saveAttachmentToDisk(
+				{ name: "r.pdf", data: Buffer.from("payload").toString("base64") },
+				join(dir, "folder.pdf"),
+				{ overwrite: true },
+			);
+			expect(result.ok).toBe(false);
+			expect(result.error).toContain("not a regular file");
 		});
 	});
 });
