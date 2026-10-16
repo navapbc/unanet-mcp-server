@@ -3,9 +3,20 @@
 // multipart, on every attachment endpoint (expenses, timesheets, user, people,
 // invoices...). Reads return the same shape with the full base64 bytes.
 
-import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
+import {
+	closeSync,
+	constants,
+	fstatSync,
+	ftruncateSync,
+	lstatSync,
+	openSync,
+	readFileSync,
+	realpathSync,
+	writeSync,
+} from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { z } from "zod";
+import { isEnabled } from "../auth.js";
 import { toNumberOrNull } from "./http.js";
 
 // Large blobs are usually the wrong file. Keep in step with expenses.ts.
@@ -37,11 +48,13 @@ export function inferMimeType(name: string): string | null {
 	return MIME_BY_EXTENSION[extname(name).toLowerCase()] ?? null;
 }
 
-// Attachment tools read and write local files on behalf of a model. Keep them
-// to ordinary document files so a prompt-injected path cannot upload a
-// credential file (~/.ssh/id_rsa, ~/.aws/credentials, .env) or drop a script:
-// no hidden file or directory anywhere in the real path (symlinks resolved),
-// and only the document/receipt extensions in MIME_BY_EXTENSION.
+// Attachment tools read and write local files on behalf of a model. This is a
+// guard against careless or injected paths, not a content scanner: it refuses
+// hidden files and folders anywhere in the real path (symlinks resolved), so
+// ~/.ssh, ~/.aws and .env style locations are out, and it only accepts the
+// document/receipt extensions in MIME_BY_EXTENSION. A visible file with an
+// allowed extension is accepted whatever it contains. Destinations that are
+// symlinks or not regular files are refused.
 export function checkLocalAttachmentPath(
 	path: string,
 	purpose: "read" | "write",
@@ -52,8 +65,19 @@ export function checkLocalAttachmentPath(
 		if (purpose === "read") {
 			real = realpathSync(requested);
 		} else {
-			const target = join(realpathSync(dirname(requested)), basename(requested));
-			real = existsSync(target) ? realpathSync(target) : target;
+			real = join(realpathSync(dirname(requested)), basename(requested));
+			let existing;
+			try {
+				existing = lstatSync(real);
+			} catch (error: any) {
+				if (error.code !== "ENOENT") throw error;
+			}
+			if (existing && !existing.isFile()) {
+				return {
+					ok: false,
+					error: `Refusing ${real}: the destination exists and is not a regular file (symbolic links are not followed).`,
+				};
+			}
 		}
 	} catch (error: any) {
 		return { ok: false, error: `Could not resolve ${requested}: ${error.message}` };
@@ -71,6 +95,21 @@ export function checkLocalAttachmentPath(
 		};
 	}
 	return { ok: true, path: real };
+}
+
+// Writing a downloaded attachment to the local disk changes the user's
+// machine, so it is gated like a write: the write tier must be enabled AND the
+// caller must pass confirm=true. Metadata and inline (includeData) downloads
+// stay available without either. Read at call time, never cached.
+export function diskSaveBlocked(args: { saveTo?: string; confirm?: unknown }): string | null {
+	if (!args.saveTo) return null;
+	if (!isEnabled(process.env.UNANET_ENABLE_WRITE_TOOLS)) {
+		return "Saving an attachment to disk requires UNANET_ENABLE_WRITE_TOOLS=true. Use includeData=true to receive the file inline instead.";
+	}
+	if (args.confirm !== true) {
+		return "confirm=true is required before saving an attachment to disk.";
+	}
+	return null;
 }
 
 export function summarizeAttachment(attachment: any) {
@@ -193,7 +232,10 @@ export function loadAttachmentInput(args: {
 }
 
 // Write a downloaded AttachmentModel to disk. Never overwrites an existing
-// file unless the caller opts in; returns the absolute path written.
+// file unless the caller opts in; returns the absolute path written. The file
+// is opened without following a final symlink (and exclusively when not
+// overwriting), so the checked path cannot be swapped for a link between the
+// check and the write.
 export function saveAttachmentToDisk(
 	attachment: { name?: string; data?: string },
 	saveTo: string,
@@ -205,17 +247,29 @@ export function saveAttachmentToDisk(
 	const checked = checkLocalAttachmentPath(saveTo, "write");
 	if (!checked.ok) return checked;
 	const target = checked.path;
-	if (existsSync(target) && !options.overwrite) {
-		return {
-			ok: false,
-			error: `${target} already exists. Pass overwrite=true to replace it.`,
-		};
-	}
 	const buffer = Buffer.from(attachment.data, "base64");
+	const noFollow = constants.O_NOFOLLOW ?? 0;
+	const flags = options.overwrite
+		? constants.O_WRONLY | constants.O_CREAT | noFollow
+		: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow;
+	let descriptor: number | undefined;
 	try {
-		writeFileSync(target, buffer);
+		descriptor = openSync(target, flags, 0o600);
+		if (!fstatSync(descriptor).isFile()) {
+			return { ok: false, error: `Refusing ${target}: it is not a regular file.` };
+		}
+		ftruncateSync(descriptor, 0);
+		writeSync(descriptor, buffer);
 	} catch (writeError: any) {
+		if (writeError.code === "EEXIST") {
+			return {
+				ok: false,
+				error: `${target} already exists. Pass overwrite=true to replace it.`,
+			};
+		}
 		return { ok: false, error: `Could not write ${target}: ${writeError.message}` };
+	} finally {
+		if (descriptor !== undefined) closeSync(descriptor);
 	}
 	return { ok: true, path: target, bytes: buffer.length };
 }

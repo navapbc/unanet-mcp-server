@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 import { type UnanetAuth, createUnanetClient } from "../auth.js";
-import { saveAttachmentToDisk, summarizeAttachment } from "../utils/attachments.js";
+import { diskSaveBlocked, saveAttachmentToDisk, summarizeAttachment } from "../utils/attachments.js";
 import {
 	allocationInputSchema,
 	assertAllocationsTotal100,
@@ -27,6 +27,7 @@ import {
 	pageSizeSchema,
 	requireConfirm,
 	toNumberOrNull,
+	writeErrorResult,
 } from "../utils/http.js";
 
 const EDITABLE_EXPENSE_STATUSES = new Set(["INUSE", "DISAPPROVED"]);
@@ -105,7 +106,7 @@ export const updateExpenseReportTool = {
 				message: "Expense report updated (still a draft; not submitted).",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -142,7 +143,7 @@ export const deleteExpenseReportTool = {
 				message: `Expense report ${args.expenseId} deleted.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -268,7 +269,7 @@ export const updateExpenseDetailTool = {
 				message: "Expense line updated (report still a draft; not submitted).",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -301,7 +302,7 @@ export const deleteExpenseDetailTool = {
 				message: "Expense line deleted.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -367,15 +368,18 @@ export const getExpenseMealCapsTool = {
 export const getExpenseAttachmentTool = {
 	name: "unanet_get_expense_attachment",
 	description:
-		"Download one receipt attachment from one of your Unanet expense reports. Pass saveTo to write it to a local path, or includeData=true to receive base64 inline. Read-only.",
+		"Download one receipt attachment from one of your Unanet expense reports. Returns metadata; includeData=true returns the file as base64. saveTo writes it to a local document path and is the one option that changes your machine: it needs UNANET_ENABLE_WRITE_TOOLS=true and confirm: true.",
 	inputSchema: z.object({
 		expenseId: z.number().int().positive(),
 		attachmentId: z.number().int().positive(),
 		saveTo: z.string().min(1).optional(),
 		overwrite: z.boolean().optional().default(false),
 		includeData: z.boolean().optional().default(false),
+		confirm: z.literal(true).optional().describe("Required with saveTo."),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
+		const blocked = diskSaveBlocked(args);
+		if (blocked) return { success: false, error: blocked };
 		try {
 			const client = createUnanetClient(auth);
 			const response = await client.get(
@@ -430,7 +434,7 @@ export const deleteExpenseAttachmentTool = {
 				message: "Attachment deleted.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -519,10 +523,21 @@ export const searchImportedExpensesTool = {
 			const response = await client.post("/me/expenses/imported/search", body, {
 				params: { page: args.page, pageSize: args.pageSize },
 			});
-			// Spec says the response is an array of paged models; be liberal.
-			const raw = Array.isArray(response.data) ? response.data[0] ?? response.data : response.data;
-			const items = itemsFromResponse<any>(raw);
-			return { success: true, count: items.length, paging: pageInfo(raw), importedExpenses: items };
+			// The spec declares an array of paged envelopes; also accept one
+			// envelope or a flat array of rows. Every envelope is read.
+			const data = response.data;
+			const isEnvelope = (entry: any) =>
+				entry && typeof entry === "object" && ("items" in entry || "pageCount" in entry || "resultCount" in entry);
+			const envelopes = Array.isArray(data) && data.length > 0 && data.every(isEnvelope) ? data : null;
+			const items = envelopes
+				? envelopes.flatMap((envelope: any) => itemsFromResponse<any>(envelope))
+				: itemsFromResponse<any>(data);
+			const paging = envelopes
+				? envelopes.length === 1
+					? pageInfo(envelopes[0])
+					: envelopes.map((envelope: any) => pageInfo(envelope))
+				: pageInfo(data);
+			return { success: true, count: items.length, paging, importedExpenses: items };
 		} catch (error) {
 			return errorResult(error);
 		}
@@ -557,7 +572,7 @@ export const addImportedExpenseToReportTool = {
 				message: "Imported expense added as a line on the draft report.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -622,7 +637,7 @@ export const submitExpenseReportTool = {
 				message: `Submitted expense report ${args.expenseId} for approval.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };

@@ -6,6 +6,7 @@
 // tool files do not re-implement the same unwrapping.
 
 import { z } from "zod";
+import { isOutcomeUnknown } from "../auth.js";
 
 export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -114,6 +115,63 @@ export function keyName(value: any): { key: number | null; name: string | null }
 export function errorResult(error: unknown, extra: Record<string, unknown> = {}) {
 	const message = error instanceof Error ? error.message : String(error);
 	return { success: false, error: message, ...extra };
+}
+
+// For handlers whose mutating request may have been applied despite the
+// failure (no response, or a 5xx): say so, so the caller inspects Unanet
+// before retrying instead of creating a duplicate. Failures of reads and of
+// anything that happened before the request was sent stay ordinary failures.
+export function writeErrorResult(error: unknown, extra: Record<string, unknown> = {}) {
+	if (isOutcomeUnknown(error)) {
+		return {
+			...errorResult(error, extra),
+			outcome: "unknown",
+			warning:
+				"Unanet may have applied this change before the request failed. Check Unanet (or re-read the record) before retrying so nothing is duplicated.",
+		};
+	}
+	return errorResult(error, extra);
+}
+
+// Fields that identify a person's tax or bank details, or pay. Matched
+// case-insensitively at any depth. Used for raw Unanet payloads that tools
+// return unfiltered.
+const SENSITIVE_FIELD_NAMES = new Set(
+	[
+		"federalTaxId",
+		"federalTaxIdType",
+		"costRate",
+		"idCode1",
+		"idCode2",
+		"suiTaxCode",
+		"ssn",
+		"taxId",
+		"password",
+		"vendorAccountNumber",
+		"bankAccountNumber",
+		"bankRoutingNumber",
+		"routingNumber",
+		"accountNumber",
+	].map((name) => name.toLowerCase()),
+);
+
+export const REDACTED = "[redacted]";
+
+export function redactSensitiveFields<T>(value: T): T {
+	if (Array.isArray(value)) {
+		return value.map((entry) => redactSensitiveFields(entry)) as T;
+	}
+	if (value && typeof value === "object") {
+		return Object.fromEntries(
+			Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+				key,
+				SENSITIVE_FIELD_NAMES.has(key.toLowerCase())
+					? REDACTED
+					: redactSensitiveFields(entry),
+			]),
+		) as T;
+	}
+	return value;
 }
 
 export function createdKey(data: any): number | null {

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { type UnanetAuth, createUnanetClient } from "../auth.js";
 import {
 	attachmentInputFields,
+	diskSaveBlocked,
 	loadAttachmentInput,
 	refineAttachmentInput,
 	summarizeAttachment,
@@ -20,6 +21,7 @@ import {
 	pageSchema,
 	pageSizeSchema,
 	requireConfirm,
+	writeErrorResult,
 } from "../utils/http.js";
 
 function summarizeMyProject(project: any) {
@@ -118,7 +120,7 @@ export const addToMyProjectsTool = {
 				message: `Added ${args.projects.length} project(s) to My Projects.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -147,7 +149,7 @@ export const removeFromMyProjectsTool = {
 				message: "Removed from My Projects.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -272,7 +274,7 @@ export const updateMyAlternatesTool = {
 				message: `Alternates replaced with ${args.alternates.length} entr${args.alternates.length === 1 ? "y" : "ies"}.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -280,16 +282,19 @@ export const updateMyAlternatesTool = {
 export const getMyAttachmentsTool = {
 	name: "unanet_get_my_attachments",
 	description:
-		"List attachments on your Unanet person record (metadata only), or download one by attachmentId (pass saveTo to write to disk). Read-only.",
+		"List attachments on your Unanet person record (metadata only), or download one by attachmentId (includeData=true returns it as base64). saveTo writes it to a local document path and is the one option that changes your machine: it needs UNANET_ENABLE_WRITE_TOOLS=true and confirm: true.",
 	inputSchema: z.object({
 		attachmentId: z.number().int().positive().optional(),
 		saveTo: z.string().min(1).optional(),
 		overwrite: z.boolean().optional().default(false),
 		includeData: z.boolean().optional().default(false),
+		confirm: z.literal(true).optional().describe("Required with saveTo."),
 		page: pageSchema,
 		pageSize: pageSizeSchema(50, 200),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
+		const blocked = diskSaveBlocked(args);
+		if (blocked) return { success: false, error: blocked };
 		try {
 			const client = createUnanetClient(auth);
 			if (args.attachmentId) {
@@ -333,7 +338,7 @@ export const addMyAttachmentTool = {
 				length: loaded.payload.length,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -354,7 +359,7 @@ export const deleteMyAttachmentTool = {
 			await client.delete(`/me/attachments/${args.attachmentId}`);
 			return { success: true, attachmentId: args.attachmentId, message: "Attachment deleted." };
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };

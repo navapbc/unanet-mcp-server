@@ -165,11 +165,15 @@ const allowInsecureLocalMock = isEnabled(
 	process.env.UNANET_ALLOW_INSECURE_LOCAL_MOCK,
 );
 // Extended (org-level) reads: projects, people, organizations, contracts,
-// invoices, reference data and the generic spec-driven API reader.
-// UNANET_ENABLE_LEGACY_READ_TOOLS is the original name and still honoured.
-const enableExtendedReadTools =
-	isEnabled(process.env.UNANET_ENABLE_EXTENDED_READ_TOOLS) ||
-	isEnabled(process.env.UNANET_ENABLE_LEGACY_READ_TOOLS);
+// invoices, reference data and the spec-driven API reader. Opt-in only.
+const enableExtendedReadTools = isEnabled(
+	process.env.UNANET_ENABLE_EXTENDED_READ_TOOLS,
+);
+if (process.env.UNANET_ENABLE_LEGACY_READ_TOOLS !== undefined) {
+	console.error(
+		`[${SERVER_NAME}] UNANET_ENABLE_LEGACY_READ_TOOLS is no longer supported and has no effect. Set UNANET_ENABLE_EXTENDED_READ_TOOLS=true to enable org-level reads.`,
+	);
+}
 const enableWriteTools = isEnabled(process.env.UNANET_ENABLE_WRITE_TOOLS);
 
 function errorMessage(error: unknown): string {

@@ -14,6 +14,7 @@ import {
 	pageSchema,
 	pageSizeSchema,
 	requireConfirm,
+	writeErrorResult,
 } from "../utils/http.js";
 
 const REVIEW_TYPES = ["time", "expense", "invoice"] as const;
@@ -137,7 +138,7 @@ export const completeReviewTool = {
 				message: `${args.type} ${args.id} review completed as ${args.role}.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };

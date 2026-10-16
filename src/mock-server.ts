@@ -161,6 +161,40 @@ app.post("/platform/rest/login", (req, res) => {
 	});
 });
 
+// Error-shape test routes (no auth): a 403/401 with Unanet's errors[] body, and
+// a 503 on any method so tests can tell a failed read from a failed write.
+app.get("/platform/rest/__test/forbidden", (_req, res) =>
+	res.status(403).json({ errors: [{ code: "FORBIDDEN_INSUFFICIENT_ROLE", description: "Role is missing" }] }),
+);
+app.get("/platform/rest/__test/unauthorized", (_req, res) =>
+	res.status(401).json({ errors: [{ code: "UNAUTHORIZED", description: "Session expired" }] }),
+);
+app.all("/platform/rest/__test/service-unavailable", (_req, res) =>
+	res.status(503).json({ error: "Service unavailable" }),
+);
+
+// One-shot fault for the next mutating request to any route registered after
+// this point (login and __test routes are exempt). The request is not
+// processed, so a test can also use "still pending" to prove that a tool never
+// sent a mutating request.
+let nextWriteFault: "503" | "no-response" | null = null;
+app.get("/platform/rest/__test/write-fault", (_req, res) => res.json({ pending: nextWriteFault }));
+app.post("/platform/rest/__test/next-write-fault", (req, res) => {
+	nextWriteFault = req.body?.mode ?? null;
+	res.json({ pending: nextWriteFault });
+});
+app.use((req, res, next) => {
+	const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
+	if (!nextWriteFault || !mutating || req.path.startsWith("/platform/rest/__test/")) return next();
+	const fault = nextWriteFault;
+	nextWriteFault = null;
+	if (fault === "no-response") {
+		req.socket.destroy();
+		return;
+	}
+	return res.status(503).json({ error: "Service unavailable" });
+});
+
 // Extended surface (timesheet lifecycle, leave requests, approvals, reviews,
 // user, expense lifecycle, directory). Registered before the `:id` routes below
 // so literal segments such as /me/time/time-periods take precedence.
@@ -680,6 +714,9 @@ app.get("/platform/rest/me/time/:id", (req, res) => {
 	if (created) {
 		return res.json(created);
 	}
+	// Delete-guard fixtures: a total with no timeslips, and neither.
+	if (key === 221) return res.json({ key, status: "INUSE", hours: 8 });
+	if (key === 222) return res.json({ key, status: "INUSE" });
 	const partialSheet = Object.values(PARTIAL_PERIOD_SHEETS).find(
 		(sheet) => sheet.key === key,
 	);

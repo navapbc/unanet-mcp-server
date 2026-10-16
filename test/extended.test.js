@@ -203,20 +203,37 @@ describe("Extended Unanet MCP tools", () => {
 			expect(listed.attachments.map((a) => a.name)).toContain("note.pdf");
 
 			const target = join(dir, "downloaded.pdf");
-			const downloaded = await getTimesheetAttachmentTool.handler(
-				{ timesheetId: 201, attachmentId: uploaded.attachmentId, saveTo: target },
-				auth,
-			);
-			expect(downloaded.success).toBe(true);
-			expect(existsSync(target)).toBe(true);
-			expect(readFileSync(target, "utf8")).toBe("%PDF-1.4 mock");
-			// Refuses to overwrite by default.
-			const again = await getTimesheetAttachmentTool.handler(
-				{ timesheetId: 201, attachmentId: uploaded.attachmentId, saveTo: target },
-				auth,
-			);
-			expect(again.success).toBe(false);
-			expect(again.error).toContain("already exists");
+			const request = { timesheetId: 201, attachmentId: uploaded.attachmentId, saveTo: target };
+
+			// Without the write flag, or without confirm, nothing is written.
+			delete process.env.UNANET_ENABLE_WRITE_TOOLS;
+			const noFlag = await getTimesheetAttachmentTool.handler({ ...request, confirm: true }, auth);
+			expect(noFlag.success).toBe(false);
+			expect(noFlag.error).toContain("UNANET_ENABLE_WRITE_TOOLS");
+			process.env.UNANET_ENABLE_WRITE_TOOLS = "true";
+			try {
+				const noConfirm = await getTimesheetAttachmentTool.handler(request, auth);
+				expect(noConfirm.success).toBe(false);
+				expect(noConfirm.error).toContain("confirm=true");
+				expect(existsSync(target)).toBe(false);
+
+				const downloaded = await getTimesheetAttachmentTool.handler(
+					{ ...request, confirm: true },
+					auth,
+				);
+				expect(downloaded.success).toBe(true);
+				expect(existsSync(target)).toBe(true);
+				expect(readFileSync(target, "utf8")).toBe("%PDF-1.4 mock");
+				// Refuses to overwrite by default.
+				const again = await getTimesheetAttachmentTool.handler(
+					{ ...request, confirm: true },
+					auth,
+				);
+				expect(again.success).toBe(false);
+				expect(again.error).toContain("already exists");
+			} finally {
+				delete process.env.UNANET_ENABLE_WRITE_TOOLS;
+			}
 
 			const removed = await deleteTimesheetAttachmentTool.handler(
 				{ timesheetId: 201, attachmentId: uploaded.attachmentId, confirm: true },
@@ -979,7 +996,7 @@ describe("Extended Unanet MCP tools", () => {
 
 		it("adds all write tools with the write flag", async () => {
 			const names = await listTools({
-				UNANET_ENABLE_LEGACY_READ_TOOLS: "true",
+				UNANET_ENABLE_EXTENDED_READ_TOOLS: "true",
 				UNANET_ENABLE_WRITE_TOOLS: "true",
 			});
 			expect(names).toContain("unanet_approve");

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { type UnanetAuth, createUnanetClient } from "../auth.js";
 import {
 	attachmentInputFields,
+	diskSaveBlocked,
 	loadAttachmentInput,
 	refineAttachmentInput,
 	saveAttachmentToDisk,
@@ -24,6 +25,7 @@ import {
 	requireConfirm,
 	toNumberOrNull,
 	compact,
+	writeErrorResult,
 } from "../utils/http.js";
 
 function summarizeTimesheetListItem(timesheet: any) {
@@ -273,7 +275,7 @@ export const getTimesheetAttachmentsTool = {
 export const getTimesheetAttachmentTool = {
 	name: "unanet_get_timesheet_attachment",
 	description:
-		"Download one attachment from one of your Unanet timesheets. Returns metadata; pass saveTo to write the file to a local path, or includeData=true to receive base64 bytes inline.",
+		"Download one attachment from one of your Unanet timesheets. Returns metadata; includeData=true returns the file as base64. saveTo writes it to a local document path and is the one option that changes your machine: it needs UNANET_ENABLE_WRITE_TOOLS=true and confirm: true.",
 	inputSchema: z.object({
 		timesheetId: z.number().int().positive(),
 		attachmentId: z.number().int().positive(),
@@ -288,8 +290,11 @@ export const getTimesheetAttachmentTool = {
 			.optional()
 			.default(false)
 			.describe("Return base64 data inline (can be large)."),
+		confirm: z.literal(true).optional().describe("Required with saveTo."),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
+		const blocked = diskSaveBlocked(args);
+		if (blocked) return { success: false, error: blocked };
 		try {
 			const client = createUnanetClient(auth);
 			const response = await client.get(
@@ -351,11 +356,26 @@ export const deleteTimesheetTool = {
 					error: `Timesheet ${args.timesheetId} has status ${status || "unknown"} and cannot be deleted. Only NEW or INUSE timesheets can be deleted.`,
 				};
 			}
-			const hours = (detail?.timeslips ?? []).reduce(
-				(sum: number, timeslip: any) => sum + (Number(timeslip.hoursWorked) || 0),
-				0,
+			// Emptiness must be established, not assumed. Take the larger of the
+			// hours summed from timeslips (only when the list is present) and the
+			// summary total, and refuse when neither is available.
+			const slipHours = Array.isArray(detail?.timeslips)
+				? detail.timeslips.reduce(
+						(sum: number, timeslip: any) => sum + (Number(timeslip.hoursWorked) || 0),
+						0,
+					)
+				: null;
+			const known = [slipHours, toNumberOrNull(detail?.hours)].filter(
+				(value): value is number => value !== null,
 			);
-			if (hours > 0 && !args.allowNonEmpty) {
+			const hours = known.length ? Math.max(...known) : null;
+			if (hours === null && !args.allowNonEmpty) {
+				return {
+					success: false,
+					error: `Could not establish whether timesheet ${args.timesheetId} has hours (the response had neither timeslips nor a total). Nothing was deleted. Pass allowNonEmpty=true to delete it anyway.`,
+				};
+			}
+			if (hours !== null && hours > 0 && !args.allowNonEmpty) {
 				return {
 					success: false,
 					error: `Timesheet ${args.timesheetId} has ${hours} hours recorded. Nothing was deleted. Pass allowNonEmpty=true to delete it anyway.`,
@@ -374,7 +394,7 @@ export const deleteTimesheetTool = {
 				message: `Timesheet ${args.timesheetId} deleted.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -435,7 +455,7 @@ export const addTimesheetAttachmentTool = {
 				attachmentsOnTimesheet: readback.length,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -464,7 +484,7 @@ export const deleteTimesheetAttachmentTool = {
 				message: "Attachment deleted.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -506,7 +526,7 @@ export const setTimesheetAdjustmentReasonsTool = {
 				message: "Adjustment reasons recorded.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };

@@ -16,7 +16,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { type UnanetAuth, createUnanetClient } from "../auth.js";
-import { compact, errorResult } from "../utils/http.js";
+import { compact, errorResult, redactSensitiveFields } from "../utils/http.js";
 
 type CatalogParam = {
 	name: string;
@@ -167,18 +167,34 @@ function expandSchema(name: string | null, depth: number, seen = new Set<string>
 	return out;
 }
 
-function fillPath(path: string, pathParams: Record<string, unknown> = {}): { ok: true; path: string } | { ok: false; error: string } {
+function fillPath(
+	op: CatalogOperation,
+	pathParams: Record<string, unknown> = {},
+): { ok: true; path: string } | { ok: false; error: string } {
 	const missing: string[] = [];
-	const filled = path.replace(/\{([^}]+)\}/g, (_match, name) => {
+	const invalid: string[] = [];
+	const filled = op.path.replace(/\{([^}]+)\}/g, (_match, name) => {
 		const value = pathParams[name];
 		if (value === undefined || value === null || value === "") {
 			missing.push(name);
 			return `{${name}}`;
 		}
-		return encodeURIComponent(String(value));
+		const text = String(value);
+		const declared = op.params?.find((param) => param.in === "path" && param.name === name);
+		const wantsInteger = declared?.type.startsWith("integer") ?? false;
+		// encodeURIComponent leaves "." and ".." intact and the HTTP client
+		// collapses them, so a parameter must never be able to climb the path.
+		if (text === "." || text === ".." || (wantsInteger && !/^\d+$/.test(text))) {
+			invalid.push(name);
+			return `{${name}}`;
+		}
+		return encodeURIComponent(text);
 	});
 	if (missing.length) {
 		return { ok: false, error: `Missing path parameter(s): ${missing.join(", ")}` };
+	}
+	if (invalid.length) {
+		return { ok: false, error: `Invalid path parameter(s): ${invalid.join(", ")}` };
 	}
 	return { ok: true, path: filled };
 }
@@ -190,18 +206,27 @@ const MAX_RESPONSE_CHARS = 200_000;
 function truncateResponse(data: any): { data: any; truncated: boolean } {
 	const serialized = JSON.stringify(data);
 	if (!serialized || serialized.length <= MAX_RESPONSE_CHARS) return { data, truncated: false };
-	const trimArray = (array: any[]) => {
-		let kept = array.length;
-		while (kept > 1 && JSON.stringify(array.slice(0, kept)).length > MAX_RESPONSE_CHARS) {
-			kept = Math.floor(kept / 2);
-		}
-		return array.slice(0, kept);
+	const fits = (value: unknown) => JSON.stringify(value).length <= MAX_RESPONSE_CHARS;
+	const shrink = (build: (items: any[]) => unknown, items: any[]) => {
+		let kept = items.length;
+		while (kept > 0 && !fits(build(items.slice(0, kept)))) kept = Math.floor(kept / 2);
+		return build(items.slice(0, kept));
 	};
-	if (Array.isArray(data)) return { data: trimArray(data), truncated: true };
-	if (Array.isArray(data?.items)) {
-		return { data: { ...data, items: trimArray(data.items) }, truncated: true };
+	const candidate = Array.isArray(data)
+		? shrink((items) => items, data)
+		: Array.isArray(data?.items)
+			? shrink((items) => ({ ...data, items }), data.items)
+			: null;
+	if (candidate !== null && fits(candidate)) return { data: candidate, truncated: true };
+	// A single oversized item or envelope: return a bounded text preview whose
+	// own JSON encoding fits the cap.
+	let length = Math.min(serialized.length, MAX_RESPONSE_CHARS - 2);
+	let preview = `${serialized.slice(0, length)}…`;
+	while (!fits(preview)) {
+		length = Math.floor(length * 0.9);
+		preview = `${serialized.slice(0, length)}…`;
 	}
-	return { data: `${serialized.slice(0, MAX_RESPONSE_CHARS)}…`, truncated: true };
+	return { data: preview, truncated: true };
 }
 
 function summarizeOperation(op: CatalogOperation) {
@@ -332,7 +357,7 @@ const executeCommonFields = {
 export const apiReadTool = {
 	name: "unanet_api_read",
 	description:
-		"Execute any READ-classified Unanet API operation from the catalog (GET, or POST search/retrieve endpoints) and return the raw JSON. Refuses write/sensitive operations. Use unanet_api_describe_operation first to learn the parameters. Large responses are truncated.",
+		"Execute any READ-classified Unanet API operation from the catalog (GET, or POST search/retrieve endpoints) and return the JSON. Refuses write/sensitive operations. Tax ids, bank and account numbers, cost rates and similar fields are replaced with \"[redacted]\" at any depth. Use unanet_api_describe_operation first to learn the parameters. Responses over 200,000 characters are cut down to fit.",
 	inputSchema: z.object(executeCommonFields),
 	handler: async (args: any, auth: UnanetAuth) => {
 		try {
@@ -346,7 +371,7 @@ export const apiReadTool = {
 					error: `${op.method} ${op.path} is classified as '${op.kind}', not read. Use a dedicated tool or the Unanet UI.`,
 				};
 			}
-			const filled = fillPath(op.path, args.pathParams);
+			const filled = fillPath(op, args.pathParams);
 			if (!filled.ok) return { success: false, error: filled.error, operation: summarizeOperation(op) };
 			const client = createUnanetClient(auth);
 			const response = await client.request({
@@ -355,7 +380,7 @@ export const apiReadTool = {
 				params: args.query,
 				data: op.method === "GET" ? undefined : (args.body ?? {}),
 			});
-			const { data, truncated } = truncateResponse(response.data);
+			const { data, truncated } = truncateResponse(redactSensitiveFields(response.data));
 			return {
 				success: true,
 				operation: summarizeOperation(op),

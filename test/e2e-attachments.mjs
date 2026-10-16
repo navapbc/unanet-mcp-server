@@ -86,7 +86,6 @@ async function main() {
 			UNANET_BASE_URL: BASE,
 			UNANET_ALLOW_INSECURE_LOCAL_MOCK: "true",
 			UNANET_ENABLE_WRITE_TOOLS: "true",
-			UNANET_ENABLE_LEGACY_READ_TOOLS: "true",
 		},
 	});
 	await waitFor(server, "Server started successfully");

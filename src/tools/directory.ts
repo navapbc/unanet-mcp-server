@@ -14,6 +14,7 @@ import {
 	pageInfo,
 	pageSchema,
 	pageSizeSchema,
+	redactSensitiveFields,
 	toNumberOrNull,
 } from "../utils/http.js";
 
@@ -248,7 +249,7 @@ export const getPersonTool = {
 				person: summarizePerson(person.data),
 				assignments,
 				leaveBalances: leave,
-				raw: args.includeRaw ? person.data : undefined,
+				raw: args.includeRaw ? redactSensitiveFields(person.data) : undefined,
 			};
 		} catch (error) {
 			return errorResult(error);
@@ -329,7 +330,7 @@ export const getOrganizationTool = {
 				organization: summarizeOrganization(org.data),
 				contacts,
 				addresses,
-				raw: args.includeRaw ? org.data : undefined,
+				raw: args.includeRaw ? redactSensitiveFields(org.data) : undefined,
 			};
 		} catch (error) {
 			return errorResult(error);
@@ -415,7 +416,7 @@ export const getContractTool = {
 				contract: summarizeContract(contract.data),
 				projects,
 				mods,
-				raw: args.includeRaw ? contract.data : undefined,
+				raw: args.includeRaw ? redactSensitiveFields(contract.data) : undefined,
 			};
 		} catch (error) {
 			return errorResult(error);
@@ -559,11 +560,25 @@ export const getProjectAdminsTool = {
 							)
 							.then((response) => {
 								const data = response.data;
-								const items = Array.isArray(data) || data?.items ? itemsFromResponse<any>(data) : [data];
-								return items.filter(Boolean).map((item) => ({
-									key: item?.key ?? item?.person?.key ?? null,
-									name: personName(item) ?? personName(item?.person) ?? keyName(item?.person).name ?? item?.name ?? null,
-								}));
+								const groups = Array.isArray(data) || data?.items ? itemsFromResponse<any>(data) : [data];
+								// Project approver and customer models nest people under
+								// `approvers: [{ approvalType, person }]`; other roles are a
+								// person (or a list of people) directly.
+								const entries = groups.filter(Boolean).flatMap((group) =>
+									Array.isArray(group?.approvers)
+										? group.approvers.map((approver: any) => ({
+												person: approver?.person,
+												approvalType: approver?.approvalType,
+											}))
+										: [{ person: group?.person ?? group, approvalType: group?.approvalType }],
+								);
+								return entries.map(({ person, approvalType }) =>
+									compact({
+										key: person?.key ?? null,
+										name: personName(person) ?? keyName(person).name ?? person?.name ?? null,
+										approvalType,
+									}),
+								);
 							})
 							.catch((error) => ({ error: error.message }));
 					const [primary, alternate] = await Promise.all([load("primary"), load(alternateSegment)]);
@@ -673,7 +688,7 @@ export const getInvoiceTool = {
 				invoice: summarizeInvoice(invoice.data),
 				history: history ? { items: itemsFromResponse<any>(history.data), error: history.error } : null,
 				transactionSummary: summary,
-				raw: args.includeRaw ? invoice.data : undefined,
+				raw: args.includeRaw ? redactSensitiveFields(invoice.data) : undefined,
 			};
 		} catch (error) {
 			return errorResult(error);
@@ -784,7 +799,7 @@ export const getReferenceDataTool = {
 				count: items.length,
 				paging: pageInfo(response.data),
 				items,
-				raw: args.includeRaw ? raw : undefined,
+				raw: args.includeRaw ? redactSensitiveFields(raw) : undefined,
 			};
 		} catch (error) {
 			return errorResult(error);
@@ -804,6 +819,11 @@ export const pingTool = {
 				client.get("/ping").then((r) => r.data).catch((error) => ({ error: error.message })),
 				client.get("/ping/version").then((r) => r.data).catch((error) => ({ error: error.message })),
 			]);
+			// Reachability is the health signal. A failed version lookup alone is a
+			// partial result, not a failure.
+			if (ping?.error) {
+				return { success: false, baseUrl: auth.baseUrl, error: ping.error, ping, version };
+			}
 			return { success: true, baseUrl: auth.baseUrl, ping, version };
 		} catch (error) {
 			return errorResult(error);

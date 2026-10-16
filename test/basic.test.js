@@ -1352,7 +1352,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 					UNANET_PASSWORD: "test-pass",
 					UNANET_BASE_URL: MOCK_BASE_URL,
 					UNANET_ALLOW_INSECURE_LOCAL_MOCK: "true",
-					UNANET_ENABLE_LEGACY_READ_TOOLS: "false",
+					UNANET_ENABLE_EXTENDED_READ_TOOLS: "false",
 					UNANET_ENABLE_WRITE_TOOLS: "false",
 				},
 			});
@@ -1406,7 +1406,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 					UNANET_PASSWORD: "test-pass",
 					UNANET_BASE_URL: MOCK_BASE_URL,
 					UNANET_ALLOW_INSECURE_LOCAL_MOCK: "true",
-					UNANET_ENABLE_LEGACY_READ_TOOLS: "false",
+					UNANET_ENABLE_EXTENDED_READ_TOOLS: "false",
 					UNANET_ENABLE_WRITE_TOOLS: "true",
 				},
 			});

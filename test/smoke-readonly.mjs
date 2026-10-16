@@ -23,6 +23,7 @@ const auth = {
 	password: process.env.UNANET_PASSWORD || "",
 	baseUrl: process.env.UNANET_BASE_URL || "https://navapbc.unanet.biz",
 	appName: process.env.UNANET_APP_NAME || "NavaUnanetMCP",
+	customerId: process.env.UNANET_CUSTOMER_ID || undefined,
 };
 if (!auth.username || !auth.password) {
 	console.error("UNANET_USERNAME / UNANET_PASSWORD missing from .env");

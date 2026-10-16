@@ -9,10 +9,13 @@
 //                            schema: property name, type, required, enum.
 //
 // Re-run after `npm run fetch-spec`:  npm run build-catalog
+// `node scripts/build-api-catalog.mjs --check` exits 1 when the committed files
+// differ from a fresh build (used by the test suite).
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { classify } from "./catalog-classify.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SPEC_PATH = join(here, "..", "spec", "unanet-openapi.json");
@@ -20,40 +23,6 @@ const CATALOG_PATH = join(here, "..", "spec", "api-catalog.json");
 const SCHEMAS_PATH = join(here, "..", "spec", "api-schemas.json");
 
 const METHODS = ["get", "post", "put", "patch", "delete"];
-
-// Operations that advance workflows, destroy data, or touch auth. The generic
-// write tool refuses these; they need a dedicated, human-in-the-loop tool.
-const SENSITIVE_PATH = /\/(submit|approve|disapprove|complete|posts?|void|reverse|cancel|extract|send|email|lock|unlock|close|reopen|open|activate|deactivate|reset|purge|import|reject|retract|restore|defer|return|reconcile|scan|register|login|logout|token|password|pay|payout|payment-portal|exclude|include|users|api-keys?|credentials?)(\/|$)/i;
-const SENSITIVE_SUMMARY = /\b(delet|remov|submit|approv|disapprov|void|revers|cancel|extract|send|email|lock|purge|reset|reject|retract|restor|defer|reconcil|password|token|login|\bpost|payout|\bpay\b|payment|dispos|credential|api key|integration user)/i;
-
-// Any write under these resource groups moves money, books to the ledger,
-// changes who can approve, or touches auth/config. Even a plain "create" here
-// is not something an agent should do through a generic writer.
-const SENSITIVE_TAGS = new Set([
-	"Approval Groups",
-	"Authentication",
-	"Bank Reconciliation",
-	"Bank accounts",
-	"Configuration",
-	"Customer Payments",
-	"Deposits",
-	"Exchange Rates",
-	"External Logging",
-	"Fixed Assets",
-	"Integrations",
-	"Invoices",
-	"Journal Entries",
-	"Mail",
-	"Posting Groups",
-	"Purchase Orders",
-	"Purchase Requisitions",
-	"Receiving Documents",
-	"Statistical Account Journal Entries",
-	"User Device Tokens",
-	"Vendor Invoices",
-	"Vendor Payments",
-]);
-const READ_POST_SUMMARY = /^(retriev|search|preview|validat|calculat|check|lookup|view)/i;
 
 const refName = (ref) => (typeof ref === "string" ? ref.split("/").pop() : undefined);
 
@@ -75,38 +44,6 @@ function truncate(text, max) {
 	if (!text) return undefined;
 	const clean = String(text).replace(/\s+/g, " ").trim();
 	return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
-}
-
-// Reads that can return credentials, tokens, bank or payroll data, or system
-// configuration. A generic reader must not hand these to a model; use the
-// Unanet UI or a purpose-built tool with its own review.
-const SENSITIVE_READ_PATH = /\/(tokens?|device-tokens?|integrations?|payroll|bank-accounts?|api-keys?|credentials?|secrets?|sftp|passwords?)(\/|$)/i;
-const SENSITIVE_READ_TAGS = new Set([
-	"Authentication",
-	"Bank Reconciliation",
-	"Bank accounts",
-	"Configuration",
-	"External Logging",
-	"Integrations",
-	"Mail",
-	"User Device Tokens",
-]);
-
-function classify(method, path, summary, tag) {
-	if (method === "get") {
-		return SENSITIVE_READ_PATH.test(path) || SENSITIVE_READ_TAGS.has(tag)
-			? "sensitive"
-			: "read";
-	}
-	if (SENSITIVE_PATH.test(path) || method === "delete") return "sensitive";
-	if (method === "post" && READ_POST_SUMMARY.test(summary ?? "")) {
-		return SENSITIVE_READ_PATH.test(path) || SENSITIVE_READ_TAGS.has(tag)
-			? "sensitive"
-			: "read";
-	}
-	if (SENSITIVE_SUMMARY.test(summary ?? "")) return "sensitive";
-	if (SENSITIVE_TAGS.has(tag)) return "sensitive";
-	return "write";
 }
 
 function jsonSchemaFrom(content) {
@@ -193,8 +130,23 @@ const catalog = {
 	operations,
 };
 
-writeFileSync(CATALOG_PATH, JSON.stringify(catalog));
-writeFileSync(SCHEMAS_PATH, JSON.stringify(schemas));
+const catalogJson = JSON.stringify(catalog);
+const schemasJson = JSON.stringify(schemas);
+
+if (process.argv.includes("--check")) {
+	const stale = [];
+	if (readFileSync(CATALOG_PATH, "utf8") !== catalogJson) stale.push("spec/api-catalog.json");
+	if (readFileSync(SCHEMAS_PATH, "utf8") !== schemasJson) stale.push("spec/api-schemas.json");
+	if (stale.length) {
+		console.error(`[build-api-catalog] out of date: ${stale.join(", ")}. Run npm run build-catalog.`);
+		process.exit(1);
+	}
+	console.error("[build-api-catalog] committed catalog matches the spec and classifier");
+	process.exit(0);
+}
+
+writeFileSync(CATALOG_PATH, catalogJson);
+writeFileSync(SCHEMAS_PATH, schemasJson);
 
 const kinds = {};
 for (const op of operations) kinds[op.kind] = (kinds[op.kind] ?? 0) + 1;

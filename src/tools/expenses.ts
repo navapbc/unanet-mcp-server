@@ -319,13 +319,37 @@ function matchedLineItems(
 		}));
 }
 
+// ValidationItemModel is { projectKey, taskKey, violations[] } and
+// WizardValidationItemModel carries { expenseDate, expenseTypeName, ... }; keep
+// the text and where it applies instead of String()-ing the object.
+function describeValidationItem(item: any): string {
+	if (typeof item === "string") return item;
+	if (item === null || typeof item !== "object") return String(item);
+	const where = [
+		item.projectKey !== undefined ? `project ${item.projectKey}` : null,
+		item.taskKey !== undefined && item.taskKey !== null ? `task ${item.taskKey}` : null,
+		item.expenseTypeName,
+		item.expenseDate,
+	]
+		.filter(Boolean)
+		.join(", ");
+	const what = [
+		...(Array.isArray(item.violations) ? item.violations : []),
+		item.message,
+		item.description,
+	]
+		.filter(Boolean)
+		.join("; ");
+	return [where && `(${where})`, what].filter(Boolean).join(" ") || JSON.stringify(item);
+}
+
 export function normalizeErrors(validation: any): string[] {
 	return [
 		...(validation?.expenseReportErrors ?? []),
 		...(validation?.expenseErrors ?? []),
 		...(validation?.wizardErrors ?? []),
 		...(validation?.wizardReceiptErrors ?? []),
-	].map(String);
+	].map(describeValidationItem);
 }
 
 export function normalizeWarnings(validation: any): string[] {
@@ -333,7 +357,7 @@ export function normalizeWarnings(validation: any): string[] {
 		...(validation?.expenseReportWarnings ?? []),
 		...(validation?.expenseWarnings ?? []),
 		...(validation?.wizardWarnings ?? []),
-	].map(String);
+	].map(describeValidationItem);
 }
 
 function compactParams(

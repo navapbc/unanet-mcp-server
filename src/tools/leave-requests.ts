@@ -15,6 +15,7 @@ import {
 	pageSizeSchema,
 	requireConfirm,
 	toNumberOrNull,
+	writeErrorResult,
 } from "../utils/http.js";
 
 const LEAVE_REQUEST_STATUSES = [
@@ -195,7 +196,7 @@ export const createLeaveRequestTool = {
 					"Draft leave request created (not submitted). Review it, then use unanet_submit_leave_request.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -266,7 +267,7 @@ export const updateLeaveRequestTool = {
 				message: "Leave request updated (still not submitted).",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -287,14 +288,18 @@ export const submitLeaveRequestTool = {
 		try {
 			const client = createUnanetClient(auth);
 			const existing = await loadLeaveRequest(client, args.leaveRequestId);
-			if (existing) {
-				const status = String(existing.status ?? "").toUpperCase();
-				if (!EDITABLE_STATUSES.has(status)) {
-					return {
-						success: false,
-						error: `Leave request ${args.leaveRequestId} has status ${status}; only INUSE or DISAPPROVED requests can be submitted.`,
-					};
-				}
+			if (!existing) {
+				return {
+					success: false,
+					error: `Leave request ${args.leaveRequestId} was not found among your most recent leave requests, so its status could not be checked. Nothing was submitted.`,
+				};
+			}
+			const status = String(existing.status ?? "").toUpperCase();
+			if (!EDITABLE_STATUSES.has(status)) {
+				return {
+					success: false,
+					error: `Leave request ${args.leaveRequestId} has status ${status}; only INUSE or DISAPPROVED requests can be submitted.`,
+				};
 			}
 			await client.post(
 				`/me/leave-requests/${args.leaveRequestId}/submit`,
@@ -310,7 +315,7 @@ export const submitLeaveRequestTool = {
 				message: "Leave request submitted for approval.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -339,7 +344,7 @@ export const cancelLeaveRequestTool = {
 				message: "Leave request cancelled.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -358,14 +363,18 @@ export const deleteLeaveRequestTool = {
 		try {
 			const client = createUnanetClient(auth);
 			const existing = await loadLeaveRequest(client, args.leaveRequestId);
-			if (existing) {
-				const status = String(existing.status ?? "").toUpperCase();
-				if (!EDITABLE_STATUSES.has(status)) {
-					return {
-						success: false,
-						error: `Leave request ${args.leaveRequestId} has status ${status}; only INUSE or DISAPPROVED requests can be deleted. Use unanet_cancel_leave_request for submitted ones.`,
-					};
-				}
+			if (!existing) {
+				return {
+					success: false,
+					error: `Leave request ${args.leaveRequestId} was not found among your most recent leave requests, so its status could not be checked. Nothing was deleted.`,
+				};
+			}
+			const status = String(existing.status ?? "").toUpperCase();
+			if (!EDITABLE_STATUSES.has(status)) {
+				return {
+					success: false,
+					error: `Leave request ${args.leaveRequestId} has status ${status}; only INUSE or DISAPPROVED requests can be deleted. Use unanet_cancel_leave_request for submitted ones.`,
+				};
 			}
 			await client.delete(`/me/leave-requests/${args.leaveRequestId}`);
 			return {
@@ -374,7 +383,7 @@ export const deleteLeaveRequestTool = {
 				message: "Leave request deleted.",
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };

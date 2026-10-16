@@ -22,9 +22,9 @@ The server exposes the Unanet Platform REST API in **three tiers**, so the defau
 | --- | --- | --- | --- |
 | Self-service reads (default) | — | 33 | Your own leave balances/requests, expense reports (lines, history, receipts, meal caps, imported card transactions), timesheets (periods, history, adjustments, attachments), the approval and review queues addressed to you, My Projects, rates, alternates. |
 | Extended reads | `UNANET_ENABLE_EXTENDED_READ_TOOLS=true` | 22 | Org-level reads: projects/tasks/assignments/notes/admins, people, organizations, contracts, invoices, reference lookups — plus a **spec-driven catalog and read-only generic reader** (`unanet_api_search_operations`, `unanet_api_describe_operation`, `unanet_api_read`) for the read-classified operations in the OpenAPI spec. |
-| Writes | `UNANET_ENABLE_WRITE_TOOLS=true` | 38 | 34 live writes plus 4 legacy stubs that always fail closed. Timesheet/expense/leave create-edit-submit, approve/disapprove, reviews, My Projects, attachments. **Every live write requires `confirm: true`**; submits validate first and hold on warnings. There is no generic API writer: a write exists only as a dedicated tool with its own guards. |
+| Writes | `UNANET_ENABLE_WRITE_TOOLS=true` | 38 | 34 live writes plus 4 legacy stubs that always fail closed. Timesheet/expense/leave create-edit-submit, approve/disapprove, reviews, My Projects, attachments. **Every live write requires `confirm: true`**; timesheet and expense submits validate first and hold on warnings. There is no generic API writer: a write exists only as a dedicated tool with its own guards. |
 
-The Unanet spec has 1,267 operations. Dedicated tools cover the self-service and common workflows. `unanet_api_read` can run 584 read-classified operations (GET, or POST search/retrieve), including ones that also have a dedicated tool. The 467 operations classified **sensitive** are refused: workflow verbs (submit/approve/post/void/send…), deletes, auth, and anything that can return credentials, tokens, bank, payroll or configuration data. The 216 plain create/update operations are not reachable except through a dedicated tool.
+The Unanet spec has 1,267 operations. Dedicated tools cover the self-service and common workflows. `unanet_api_read` can run 580 read-classified operations (GET, or POST search/retrieve), including ones that also have a dedicated tool. The 471 operations classified **sensitive** are refused: workflow verbs (submit/approve/post/void/send…), deletes, auth, and reads that can return credentials, tokens, bank, payroll, person or project cost-rate or configuration data. Other fields such as tax ids and bank/account numbers are replaced with `[redacted]` in `unanet_api_read` output and in `includeRaw` payloads. The 216 plain create/update operations are not reachable except through a dedicated tool.
 
 Example in Claude Desktop:
 
@@ -162,7 +162,7 @@ Restart Claude Desktop after changing the config.
 | `UNANET_USERNAME` | Yes | — | Your Unanet username. |
 | `UNANET_PASSWORD` | Yes | — | Your Unanet password. |
 | `UNANET_APP_NAME` | No | `NavaUnanetMCP` | Value sent in the `X-Una-App` header. |
-| `UNANET_ENABLE_EXTENDED_READ_TOOLS` | No | `false` | Enables org-level read tools, MCP resources, and the generic API catalog/reader. `UNANET_ENABLE_LEGACY_READ_TOOLS` is the historical name and still works. |
+| `UNANET_ENABLE_EXTENDED_READ_TOOLS` | No | `false` | Enables org-level read tools, MCP resources, and the API catalog/read-only reader. The old `UNANET_ENABLE_LEGACY_READ_TOOLS` flag is no longer supported: it has no effect and the server logs a warning if it is set. |
 | `UNANET_ENABLE_WRITE_TOOLS` | No | `false` | Enables mutating tools (all require `confirm: true`). Use carefully. |
 | `UNANET_ALLOWED_BASE_URLS` | No | Nava tenant only | Comma-separated allow-list for additional production origins. |
 | `UNANET_ALLOW_INSECURE_LOCAL_MOCK` | No | `false` | Allows `http://localhost` / `127.0.0.1` for local mock testing only. |
@@ -255,7 +255,9 @@ Requires:
 UNANET_ENABLE_WRITE_TOOLS=true
 ```
 
-All of these require `confirm: true`. Submissions (`unanet_submit_timesheet_for_approval`, `unanet_submit_expense_report`, `unanet_submit_leave_request`) validate first, refuse on errors and hold on warnings unless `ignoreWarnings: true`. Approvals, disapprovals and reviews change other people's records and should only be called after a human has reviewed the item. Tools that take a local `filePath` or `saveTo` only accept ordinary document files (pdf, images, txt, csv, doc/docx, xls/xlsx) outside hidden folders such as `.ssh`, `.aws` or `.env`.
+All live writes require `confirm: true` (the four legacy stubs at the end of the table take no input that matters and always fail). Timesheet and expense submissions (`unanet_submit_timesheet_for_approval`, `unanet_submit_expense_report`) validate first, refuse on errors and hold on warnings unless `ignoreWarnings: true`. `unanet_submit_leave_request` has no validation endpoint: it checks that the request is a draft and then submits. Approvals, disapprovals and reviews change other people's records and should only be called after a human has reviewed the item. If a create or update fails with no response or a server error, the result says `outcome: "unknown"`: check Unanet before retrying.
+
+Attachment tools that take a local `filePath` or `saveTo` only accept ordinary document files (pdf, images, txt, csv, doc/docx, xls/xlsx) outside hidden folders such as `.ssh`, `.aws` or `.env`; this is a path and extension check, not a scan of file contents. Downloads to disk (`saveTo` on the three `unanet_get_*attachment*` tools) also need `UNANET_ENABLE_WRITE_TOOLS=true` and `confirm: true`; without them use `includeData` to receive the file inline.
 
 | Tool | Description |
 | --- | --- |
@@ -332,11 +334,11 @@ npm run build
 npm test                # builds, then runs test/basic.test.js + test/extended.test.js against the mock server
 npm run mock-server     # local mock Unanet API (src/mock-server.ts + src/mock-routes-extended.ts)
 npm run fetch-spec      # refresh spec/unanet-openapi.json from the Unanet dev portal
-npm run build-catalog   # regenerate spec/api-catalog.json + spec/api-schemas.json from the spec
+npm run build-catalog   # regenerate spec/api-catalog.json + spec/api-schemas.json from the spec (add -- --check to verify without writing)
 npm run smoke:readonly  # live READ-ONLY smoke test against the tenant in .env (invokes read handlers only; never writes)
 ```
 
-Live verification status (2026-08-15, a non-admin Nava account): all 33 self-service read tools and the generic reader returned real data; org-level reads (projects detail/tasks/assignments/notes/admins, organizations, contracts, contract types) fail closed with 403 for that account and remain unverified beyond error handling; write tools have only been exercised against the mock server.
+Live verification: an earlier version of this code (before the hardening in this repository) was reported to return real data for the self-service reads in August 2026 on a non-admin Nava account; org-level reads returned 403 for that account. That report is carried over from the fork's notes, has no saved evidence here, and does not cover the current code. Treat every tool as mock-verified only until you have run `npm run smoke:readonly` yourself. Write tools have only been exercised against the mock server.
 
 Project layout:
 
@@ -360,7 +362,7 @@ src/
 │   ├── directory.ts            # People, organizations, contracts, tasks, assignments, invoices, reference data, ping
 │   ├── contacts.ts             # Organization contact create, company info (legacy)
 │   ├── financials.ts           # Billing status, invoice-backed reports (legacy)
-│   └── api.ts                  # Generic spec-driven catalog / describe / read / write
+│   └── api.ts                  # Spec-driven catalog / describe / read-only executor (no generic writer)
 ├── utils/
 │   ├── http.ts                 # Shared paging/date/confirm helpers
 │   └── attachments.ts          # Base64 attachment upload/download helpers
@@ -369,7 +371,8 @@ src/
 └── types/
     └── unanet.ts               # Shared types
 scripts/
-├── build-api-catalog.mjs       # spec/unanet-openapi.json → spec/api-catalog.json + api-schemas.json
+├── build-api-catalog.mjs       # spec/unanet-openapi.json → spec/api-catalog.json + api-schemas.json (--check verifies)
+├── catalog-classify.mjs        # read / write / sensitive classification used by the builder (unit-tested)
 └── spec-drift-check.mjs        # Monthly live-vs-committed spec drift check
 spec/
 ├── unanet-openapi.json         # Full Unanet OpenAPI spec (14 MB, committed)

@@ -19,6 +19,7 @@ import {
 	pageSizeSchema,
 	requireConfirm,
 	toNumberOrNull,
+	writeErrorResult,
 } from "../utils/http.js";
 
 export const APPROVAL_TYPES = [
@@ -370,7 +371,7 @@ export const approveTool = {
 				message: `${args.type} ${args.id} approved as ${args.role}.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };
@@ -427,7 +428,7 @@ export const disapproveTool = {
 				message: `${args.type} ${args.id} disapproved as ${args.role}.`,
 			};
 		} catch (error) {
-			return errorResult(error);
+			return writeErrorResult(error);
 		}
 	},
 };

@@ -92,7 +92,7 @@ Read the actual error before guessing. These cover nearly everything:
 | `UNANET_USERNAME environment variable is required` in logs | server started outside the repo folder or `.env` missing | the config command must `cd` into the repo before `node dist/index.js` |
 | **401** / "Authentication failed" | wrong username, password, or base URL | log into the Unanet website with the same credentials; check `.env` for typos (a password containing `#` is cut off unless wrapped in single quotes, or backticks if it contains a single quote); base URL must be the origin only, no `/platform/rest` |
 | **403** | login worked; their Unanet account lacks that permission | Not a connector problem. Note what they tried and ask Finance whether they should have it. Don't work around it |
-| Own data works but project, people or contract questions return "not found" | org-level read tools disabled | set `UNANET_ENABLE_EXTENDED_READ_TOOLS=true` in `.env` (`UNANET_ENABLE_LEGACY_READ_TOOLS` is the older name and still works), restart Claude Desktop |
+| Own data works but project, people or contract questions return "not found" | org-level read tools disabled | set `UNANET_ENABLE_EXTENDED_READ_TOOLS=true` in `.env` (the old `UNANET_ENABLE_LEGACY_READ_TOOLS` no longer does anything), restart Claude Desktop |
 | Windows "Access Denied" during setup | permissions / corporate policy | do **not** disable antivirus; stop and get IT or Billy |
 | `node: command not found` after installing Node | terminal opened before install | close and reopen the terminal |
 

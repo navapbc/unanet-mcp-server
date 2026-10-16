@@ -165,23 +165,42 @@ function safeUrlForLog(url?: string): string {
 		.replace(/token=([^&]+)/gi, "token=***");
 }
 
-function apiError(message: string, status?: number): Error {
-	const err = new Error(message);
-	if (status !== undefined) {
-		(err as Error & { status?: number }).status = status;
+// Callers URL-encode path parameters, but dot segments survive encoding and
+// the HTTP client collapses them, which would send the request to a different
+// resource than the one named. Refuse them for every tool.
+function assertNoDotSegments(url?: string): void {
+	if (!url) return;
+	for (const segment of url.split("?")[0].split("/")) {
+		let decoded = segment;
+		try {
+			decoded = decodeURIComponent(segment);
+		} catch {
+			// Keep the raw segment.
+		}
+		if (decoded === "." || decoded === "..") {
+			throw new Error("Refusing a request path that contains a dot segment.");
+		}
 	}
+}
+
+type ApiError = Error & { status?: number; method?: string; noResponse?: boolean };
+
+function apiError(message: string, status?: number, method?: string): Error {
+	const err: ApiError = new Error(message);
+	if (status !== undefined) err.status = status;
+	if (method) err.method = method;
 	return err;
 }
 
-// True when a request may have been applied by Unanet even though it failed:
-// the request was sent and no response came back, or Unanet answered 5xx.
-// A failure that happens before the request is sent (login, setup) is not.
+const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
+
+// True when a MUTATING request may have been applied by Unanet even though it
+// failed: it was sent and no response came back, or Unanet answered 5xx. A
+// failed read, or a failure before the request is sent (login, setup), is not.
 export function isOutcomeUnknown(error: unknown): boolean {
 	if (typeof error !== "object" || error === null) return false;
-	const { noResponse, status } = error as {
-		noResponse?: boolean;
-		status?: number;
-	};
+	const { noResponse, status, method } = error as ApiError;
+	if (!method || !MUTATING_METHODS.has(method)) return false;
 	return noResponse === true || (typeof status === "number" && status >= 500);
 }
 
@@ -205,6 +224,7 @@ function unanetErrorDetail(data: unknown): string {
 }
 
 function handleApiError(error: any): never {
+	const method = String(error.config?.method ?? "").toLowerCase();
 	if (error.response) {
 		const status = error.response.status;
 		const statusText = error.response.statusText;
@@ -217,36 +237,33 @@ function handleApiError(error: any): never {
 				throw apiError(
 					`Authentication failed. Please check your credentials.${detail}`,
 					status,
+					method,
 				);
 			case 403:
 				throw apiError(
 					`Access forbidden. Your Unanet account does not have permission for this operation.${detail}`,
 					status,
+					method,
 				);
 			case 429:
-				throw apiError("Rate limit exceeded. Please try again later.", status);
+				throw apiError("Rate limit exceeded. Please try again later.", status, method);
 			case 404:
 				throw apiError(
 					"Resource not found. Please check the ID and try again.",
 					status,
-				);
-			case 500:
-			case 502:
-			case 503:
-				throw apiError(
-					"Unanet service is temporarily unavailable. Please try again later.",
-					status,
+					method,
 				);
 			default:
-				throw apiError(`API error: ${status} ${statusText}`, status);
+				throw apiError(`API error: ${status} ${statusText}`, status, method);
 		}
 	}
 
 	if (error.request) {
-		const noResponse = new Error(
+		const noResponse: ApiError = new Error(
 			"No response from Unanet API. Please check your network connection and base URL.",
 		);
-		(noResponse as Error & { noResponse?: boolean }).noResponse = true;
+		noResponse.noResponse = true;
+		noResponse.method = method;
 		throw noResponse;
 	}
 
@@ -292,9 +309,9 @@ export function createUnanetClient(auth: UnanetAuth): UnanetClient {
 	});
 
 	client.interceptors.request.use(async (config) => {
+		assertNoDotSegments(config.url);
 		const token = await getPlatformBearerToken(auth);
 		config.headers.Authorization = `Bearer ${token}`;
-
 		if (
 			config.url?.startsWith("/") &&
 			!config.url.startsWith("/platform/rest/")

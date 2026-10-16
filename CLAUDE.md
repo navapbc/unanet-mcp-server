@@ -68,8 +68,8 @@ export const toolName = {
 
 **Tiers / flags**
 - Default: self-service `/me/…` reads only.
-- `UNANET_ENABLE_EXTENDED_READ_TOOLS=true` (alias `UNANET_ENABLE_LEGACY_READ_TOOLS`): org-level reads + generic catalog/reader + MCP resources.
-- `UNANET_ENABLE_WRITE_TOOLS=true`: every write. All writes take `confirm: true` (enforced by `z.literal(true)` and re-checked in the handler via `requireConfirm`). Submits validate first and hold on warnings.
+- `UNANET_ENABLE_EXTENDED_READ_TOOLS=true`: org-level reads + API catalog/read-only reader + MCP resources. (The old `UNANET_ENABLE_LEGACY_READ_TOOLS` no longer does anything; the server warns if it is set.)
+- `UNANET_ENABLE_WRITE_TOOLS=true`: every write. All live writes take `confirm: true` (enforced by `z.literal(true)` and re-checked in the handler via `requireConfirm`); the 4 legacy stubs always fail. Timesheet and expense submits validate first and hold on warnings; leave submit only checks the draft status. Write handlers report `outcome: "unknown"` (via `writeErrorResult`) when a mutating request got no response or a 5xx, so callers check Unanet before retrying.
 
 **Shared helpers**
 - `src/utils/http.ts`: `itemsFromResponse`, `pageInfo`, `compact`, `isoDateSchema`, `pageSchema`/`pageSizeSchema`, `confirmSchema`/`requireConfirm`, `keyName`, `errorResult`.

@@ -273,6 +273,17 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 			return res.status(400).json({ error: "DateRangeModel requires rangeStart and rangeEnd" });
 		}
 		const status = req.body?.status ?? "AVAILABLE";
+		const vendors: string[] = req.body?.vendors ?? [];
+		// The spec declares an array of paged envelopes; MULTI returns two, FLAT a bare row array.
+		if (vendors.includes("MULTI")) {
+			return res.json([
+				paged([{ key: 1, vendor: "ONE", status: "AVAILABLE" }]),
+				paged([{ key: 2, vendor: "TWO", status: "AVAILABLE" }]),
+			]);
+		}
+		if (vendors.includes("FLAT")) {
+			return res.json([{ key: 3, vendor: "THREE", status: "AVAILABLE" }, { key: 4, vendor: "FOUR", status: "AVAILABLE" }]);
+		}
 		res.json(paged(status === "USED" ? [] : [{ key: 8801, vendor: "UBER", amount: 23.4, expenseDate: "2026-05-18", status: "AVAILABLE" }]));
 	});
 	app.put("/platform/rest/me/expenses/:id", (req, res) => {
@@ -360,7 +371,7 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		res.json(paged(people.filter((p) => !name || `${p.firstName} ${p.lastName} ${p.username}`.toLowerCase().includes(name))));
 	});
 	app.get("/platform/rest/people/:id", (req, res) =>
-		res.json({ key: Number(req.params.id), username: "jane", firstName: "Jane", lastName: "Smith", email: "jane@example.com", active: true, organization: { key: 1, name: "Delivery", code: "DEL" }, laborCategory: { key: 384, name: "Software Engineer" } }),
+		res.json({ key: Number(req.params.id), username: "jane", firstName: "Jane", lastName: "Smith", email: "jane@example.com", active: true, idCode1: "ID-777", organization: { key: 1, name: "Delivery", code: "DEL" }, laborCategory: { key: 384, name: "Software Engineer" } }),
 	);
 	app.post("/platform/rest/people/:id/assignments/search", (_req, res) =>
 		res.json(paged([{ key: 1, person: { key: 10, name: "Jane Smith" }, project: { key: 101, name: "Test Project Alpha", code: "PRJ-001" }, beginDate: "2026-01-01", endDate: "2026-12-31", budgetHours: 500 }])),
@@ -369,7 +380,16 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		res.json(paged([{ key: 1, code: "DEL", name: "Delivery", active: true }, { key: 2, code: "NJDOL", name: "New Jersey Department of Labor", active: true, type: "Customer" }])),
 	);
 	app.get("/platform/rest/organizations/:id", (req, res) =>
-		res.json({ key: Number(req.params.id), code: "NJDOL", name: "New Jersey Department of Labor", active: true }),
+		res.json({
+			key: Number(req.params.id),
+			code: "NJDOL",
+			// Oversized fixture: id 998 returns one object that is itself over the cap.
+			name: Number(req.params.id) === 998 ? "x".repeat(250_000) : "New Jersey Department of Labor",
+			active: true,
+			federalTaxId: "12-3456789",
+			federalTaxIdType: "EIN",
+			vendorProfiles: [{ vendorAccountNumber: "ACCT-99" }],
+		}),
 	);
 	app.get("/platform/rest/organizations/:id/contacts", (_req, res) =>
 		res.json(paged([{ key: 31, first: "Pat", last: "Contact", title: "PM", active: true, primaryEmail: "pat@example.gov" }])),
@@ -399,10 +419,28 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		res.json(paged([{ key: 1, person: { key: 10, name: "Jane Smith" }, project: { key: Number(req.params.id), name: "Test Project Alpha", code: "PRJ-001" }, beginDate: "2026-01-01", endDate: "2026-12-31" }]));
 	});
 	app.get("/platform/rest/projects/:id/notes", (req, res) =>
-		res.json(paged([{ key: 1, project: { key: Number(req.params.id), name: "Test Project Alpha" }, title: "Kickoff", note: "Kickoff held.", noteType: { key: 1, name: "General" }, createDate: "2026-01-02" }])),
+		res.json(
+			Number(req.params.id) === 999
+				? // Oversized fixture: one 250,000-character note and a small neighbour.
+					paged([
+						{ key: 1, title: "Huge", note: "x".repeat(250_000) },
+						{ key: 2, title: "Small", note: "ok" },
+					])
+				: paged([{ key: 1, project: { key: Number(req.params.id), name: "Test Project Alpha" }, title: "Kickoff", note: "Kickoff held.", noteType: { key: 1, name: "General" }, createDate: "2026-01-02" }]),
+		),
 	);
 	app.get("/platform/rest/projects/:id/admin/:role/:segment", (req, res) =>
-		res.json(paged(req.params.segment === "primary" ? [{ key: 9, firstName: "Test", lastName: "User" }] : [])),
+		res.json(
+			["project-approvers", "customers"].includes(req.params.role)
+				? // Approver and customer models nest people under approvers[].
+					paged(req.params.segment === "primary"
+						? [{ approvers: [
+								{ approvalType: "ANY", person: { key: 9, firstName: "Test", lastName: "User" } },
+								{ approvalType: "ALL", person: { key: 10, firstName: "Jane", lastName: "Smith" } },
+							] }]
+						: [])
+				: paged(req.params.segment === "primary" ? [{ key: 9, firstName: "Test", lastName: "User" }] : []),
+		),
 	);
 	app.post("/platform/rest/invoices/search", (req, res) => {
 		for (const field of ["invoiceDate", "createdDate", "completedDate", "extractedDate", "postedDate"]) {
