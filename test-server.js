@@ -13,9 +13,8 @@ const server = spawn('node', ['dist/index.js'], {
     ...process.env,
     UNANET_USERNAME: 'test-user',
     UNANET_PASSWORD: 'test-pass',
-    UNANET_API_KEY: 'test-api-key',
-    UNANET_FIRM_CODE: 'TEST001',
-    UNANET_BASE_URL: 'https://test.unanet.com'
+    UNANET_BASE_URL: 'http://127.0.0.1:3000',
+    UNANET_ALLOW_INSECURE_LOCAL_MOCK: 'true'
   }
 });
 

@@ -3,55 +3,10 @@ import {
 	type UnanetAuth,
 	type UnanetClient,
 	createUnanetClient,
+	isOutcomeUnknown,
 } from "../auth.js";
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-const timesheetRecordSchema = z
-	.object({
-		key: z.coerce.number().int().positive().optional(),
-		id: z.coerce.number().int().positive().optional(),
-		beginDate: z.string().optional(),
-		endDate: z.string().optional(),
-		status: z.unknown().optional(),
-	})
-	.passthrough();
-
-const timesheetReferenceSchema = timesheetRecordSchema
-	.refine((value) => value.key !== undefined || value.id !== undefined, {
-		message: "Timesheet reference must include key or id",
-	})
-	.transform((value) => {
-		const key = value.key ?? value.id;
-		if (key === undefined) {
-			throw new Error("Timesheet reference must include key or id");
-		}
-		return { ...value, key };
-	});
-
-const createdTimesheetSchema = timesheetRecordSchema.extend({
-	periodStart: z.string().optional(),
-	periodEnd: z.string().optional(),
-	timePeriod: z
-		.object({
-			beginDate: z.string().optional(),
-			endDate: z.string().optional(),
-		})
-		.passthrough()
-		.optional(),
-});
-
-const createTimesheetResponseSchema = z
-	.object({
-		key: z.coerce.number().int().positive().optional(),
-		message: z
-			.object({
-				key: z.coerce.number().int().positive().optional(),
-			})
-			.passthrough()
-			.optional(),
-	})
-	.passthrough();
 
 function itemsFromResponse<T>(data: any): T[] {
 	if (Array.isArray(data)) return data;
@@ -352,20 +307,19 @@ function isDuplicate(existingTimeslip: any, newTimeslip: any): boolean {
 async function searchTimesheet(
 	client: UnanetClient,
 	workDate: string,
-): Promise<z.infer<typeof timesheetReferenceSchema> | undefined> {
+): Promise<any> {
 	const search = await client.post(
 		"/me/time/search",
 		{ workDate },
 		{ params: { page: 1, pageSize: 1 } },
 	);
-	const first = itemsFromResponse<unknown>(search.data)[0];
-	return first === undefined ? undefined : timesheetReferenceSchema.parse(first);
+	return itemsFromResponse<any>(search.data)[0];
 }
 
 async function findTimesheet(
 	client: UnanetClient,
 	workDate: string,
-): Promise<z.infer<typeof timesheetReferenceSchema>> {
+): Promise<any> {
 	const existing = await searchTimesheet(client, workDate);
 	if (existing?.key ?? existing?.id) {
 		return existing;
@@ -612,21 +566,16 @@ const createTimesheetInputSchema = z.object({
 		.describe("Must be true to confirm this live timesheet creation."),
 });
 
-// Create an empty timesheet for the period containing the requested date.
+// Create an empty timesheet starting on the requested date.
 export const createTimesheetTool = {
 	name: "unanet_create_timesheet",
 	description:
-		"Create an empty in-progress Unanet timesheet for the period containing a date. Refuses to create a duplicate or a future-period sheet, adds no time entries, and requires confirm=true.",
+		"Request a new empty in-progress Unanet timesheet starting on the supplied date. Refuses dates after today. Refuses when the period already has a timesheet and returns the existing key instead of creating one. Adds no time entries. Reports Unanet's actual period and whether it contains the supplied date (verified). If the outcome of the create request is unknown (no response or a 5xx), created is \"unknown\": search the period before retrying. Requires confirm=true.",
 	inputSchema: createTimesheetInputSchema,
 	handler: async (rawArgs: unknown, auth: UnanetAuth) => {
+		// confirm=true is enforced by the schema's z.literal(true): a missing or
+		// false value throws here, before any request is made.
 		const args = createTimesheetInputSchema.parse(rawArgs);
-		if (args.confirm !== true) {
-			return {
-				success: false,
-				created: false,
-				error: "confirm=true is required before creating a timesheet.",
-			};
-		}
 		if (args.date > formatDate()) {
 			return {
 				success: false,
@@ -648,14 +597,22 @@ export const createTimesheetTool = {
 				};
 			}
 
-			const createResponse = await client.post("/me/time", {
-				date: args.date,
-			});
-			const createResult = createTimesheetResponseSchema.parse(
-				createResponse.data,
-			);
+			let createResponse;
+			try {
+				createResponse = await client.post("/me/time", { date: args.date });
+			} catch (error: unknown) {
+				if (!isOutcomeUnknown(error)) throw error;
+				return {
+					success: false,
+					created: "unknown",
+					error: error instanceof Error ? error.message : String(error),
+					warning:
+						"Unanet may have created the timesheet before the request failed. Search the period before retrying so a duplicate is not created.",
+				};
+			}
+
 			const createdKey = numericKey(
-				createResult.key ?? createResult.message?.key,
+				createResponse.data?.key ?? createResponse.data?.message?.key,
 			);
 			if (!createdKey) {
 				return {
@@ -668,35 +625,21 @@ export const createTimesheetTool = {
 			}
 
 			try {
-				const created = createdTimesheetSchema.parse(
-					await getTimesheet(client, { key: createdKey }),
-				);
-				const periodStart =
-					created.beginDate ??
-					created.periodStart ??
-					created.timePeriod?.beginDate ??
-					null;
-				const periodEnd =
-					created.endDate ??
-					created.periodEnd ??
-					created.timePeriod?.endDate ??
-					null;
+				const created = await getTimesheet(client, { key: createdKey });
+				const period = timesheetPeriod(created);
 				const verified =
-					periodStart !== null &&
-					periodEnd !== null &&
-					args.date >= periodStart &&
-					args.date <= periodEnd;
+					period.startDate !== "unknown" &&
+					period.endDate !== "unknown" &&
+					args.date >= period.startDate &&
+					args.date <= period.endDate;
 
 				return {
 					success: true,
 					created: true,
 					verified,
 					timesheetKey: createdKey,
-					period: {
-						startDate: periodStart,
-						endDate: periodEnd,
-					},
-					status: created.status ?? null,
+					period,
+					status: created?.status ?? null,
 					...(verified
 						? {}
 						: {

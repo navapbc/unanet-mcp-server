@@ -24,7 +24,19 @@ let nextExpenseDetailKey = 9101;
 let nextAttachmentKey = 9201;
 const mockAttachments: Record<number, any[]> = {};
 let timesheetCreateCount = 0;
+let timesheetSearchCount = 0;
 let nextTimesheetKey = 205;
+type CreateFault =
+	| "409"
+	| "503"
+	| "no-response"
+	| "no-key"
+	| "nested-period"
+	| "start-only";
+let nextCreateFault: CreateFault | null = null;
+// Created timesheets whose GET returns an unusual shape: Unanet's null-field,
+// nested-period shape, or a period with a start date and no end date.
+const readbackShapes = new Map<number, "nested-period" | "start-only">();
 
 interface MockTimesheet {
 	key: number;
@@ -35,7 +47,9 @@ interface MockTimesheet {
 }
 
 const createdTimesheets = new Map<number, MockTimesheet>();
-const CREATE_TIMESHEET_TEST_DATE = "2025-12-16";
+// Search returns only created timesheets for workDates before this day. From
+// this day on, the seeded fixture sheets (201-204, 211) answer.
+const SEEDED_TIMESHEETS_START = "2026-01-01";
 
 const mockExpenses: any[] = [
 	{
@@ -483,6 +497,21 @@ app.post("/platform/rest/me/time", (req, res) => {
 	if (typeof date !== "string") {
 		return res.status(400).json({ error: "date required" });
 	}
+	if (nextCreateFault === "503" || nextCreateFault === "409") {
+		const status = Number(nextCreateFault);
+		nextCreateFault = null;
+		return res.status(status).json({ error: `Mock failure ${status}` });
+	}
+	if (nextCreateFault === "no-response") {
+		nextCreateFault = null;
+		req.socket.destroy();
+		return;
+	}
+	const fault = nextCreateFault;
+	nextCreateFault = null;
+	if (fault === "no-key") {
+		return res.json({ key: null });
+	}
 	const existing = [...createdTimesheets.values()].find(
 		(timesheet) => date >= timesheet.beginDate && date <= timesheet.endDate,
 	);
@@ -498,18 +527,38 @@ app.post("/platform/rest/me/time", (req, res) => {
 		status: "INUSE",
 		timeslips: [],
 	});
+	if (fault === "nested-period" || fault === "start-only") {
+		readbackShapes.set(key, fault);
+	}
 	timesheetCreateCount += 1;
 	return res.json({ key });
 });
 
 app.post("/platform/rest/me/time/search", (req, res) => {
+	timesheetSearchCount += 1;
 	const workDate = req.body?.workDate;
 	const created = [...createdTimesheets.values()].filter(
 		(timesheet) =>
 			workDate >= timesheet.beginDate && workDate <= timesheet.endDate,
 	);
-	if (created.length > 0 || workDate === CREATE_TIMESHEET_TEST_DATE) {
+	if (created.length > 0 || workDate < SEEDED_TIMESHEETS_START) {
 		return res.json({ items: created });
+	}
+	// Unanet returns null for fields it does not populate and nests the period
+	// under timePeriod; every timesheet tool must tolerate that shape.
+	if (workDate === "2026-02-10") {
+		return res.json({
+			items: [
+				{
+					key: 211,
+					id: null,
+					beginDate: null,
+					endDate: null,
+					timePeriod: { beginDate: "2026-02-01", endDate: "2026-02-15" },
+					status: "INUSE",
+				},
+			],
+		});
 	}
 	const key = SEARCH_KEY_BY_DATE[workDate] ?? 201;
 	res.json({
@@ -528,6 +577,25 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 app.get("/platform/rest/me/time/:id", (req, res) => {
 	const key = Number(req.params.id);
 	const created = createdTimesheets.get(key);
+	const shape = readbackShapes.get(key);
+	if (created && shape === "nested-period") {
+		return res.json({
+			key,
+			id: null,
+			beginDate: null,
+			endDate: null,
+			timePeriod: { beginDate: created.beginDate, endDate: created.endDate },
+			status: created.status,
+		});
+	}
+	if (created && shape === "start-only") {
+		return res.json({
+			key,
+			beginDate: created.beginDate,
+			endDate: null,
+			status: created.status,
+		});
+	}
 	if (created) {
 		return res.json(created);
 	}
@@ -593,6 +661,15 @@ app.post("/platform/rest/__test/reset-put-count", (_req, res) => {
 
 app.get("/platform/rest/__test/timesheet-create-count", (_req, res) => {
 	res.json({ count: timesheetCreateCount });
+});
+
+app.get("/platform/rest/__test/timesheet-search-count", (_req, res) => {
+	res.json({ count: timesheetSearchCount });
+});
+
+app.post("/platform/rest/__test/next-create-fault", (req, res) => {
+	nextCreateFault = req.body?.mode ?? null;
+	res.json({ mode: nextCreateFault });
 });
 
 app.get("/platform/rest/me/time/:id/validate", (req, res) => {

@@ -22,7 +22,7 @@ npm run clean    # Remove dist/ directory
    - `UNANET_USERNAME`, `UNANET_PASSWORD`, `UNANET_BASE_URL` (defaults to the Nava tenant)
    - No API key or firm code. Auth is per-user Platform REST login (`POST /platform/rest/login` → short-lived bearer token). The server inherits exactly the caller's Unanet permissions.
 2. Run `npm install` to install dependencies
-3. Node.js >= 18.0.0 required (ES modules)
+3. Node.js >= 20.0.0 required (ES modules; matches `engines` in `package.json`)
 
 ## Architecture Overview
 

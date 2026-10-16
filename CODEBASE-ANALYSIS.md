@@ -13,7 +13,7 @@ This is a Model Context Protocol (MCP) server that provides integration with the
 - **`npm run prepublishOnly`** - Automatically runs build before publishing
 
 ### Requirements:
-- Node.js >= 18.0.0
+- Node.js >= 20.0.0
 - TypeScript 5.3.0
 - ES Modules (type: "module" in package.json)
 

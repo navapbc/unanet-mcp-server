@@ -179,7 +179,7 @@ Please install Node.js first:
 [ERROR] Failed to install dependencies!
 Please check your internet connection and try again.
 ```
-**Solution:** Check internet, disable antivirus temporarily
+**Solution:** Check internet. If it still fails, send the error text to your IT team or Billy Hunt; do not turn off antivirus
 
 ### Error: "Access Denied"
 ```

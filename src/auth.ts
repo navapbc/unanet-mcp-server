@@ -165,6 +165,18 @@ function apiError(message: string, status?: number): Error {
 	return err;
 }
 
+// True when a request may have been applied by Unanet even though it failed:
+// the request was sent and no response came back, or Unanet answered 5xx.
+// A failure that happens before the request is sent (login, setup) is not.
+export function isOutcomeUnknown(error: unknown): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	const { noResponse, status } = error as {
+		noResponse?: boolean;
+		status?: number;
+	};
+	return noResponse === true || (typeof status === "number" && status >= 500);
+}
+
 function handleApiError(error: any): never {
 	if (error.response) {
 		const status = error.response.status;
@@ -180,7 +192,7 @@ function handleApiError(error: any): never {
 				);
 			case 403:
 				throw apiError(
-					"Access forbidden. Please check your API permissions.",
+					"Access forbidden. Your Unanet account does not have permission for this operation.",
 					status,
 				);
 			case 429:
@@ -203,9 +215,11 @@ function handleApiError(error: any): never {
 	}
 
 	if (error.request) {
-		throw new Error(
+		const noResponse = new Error(
 			"No response from Unanet API. Please check your network connection and base URL.",
 		);
+		(noResponse as Error & { noResponse?: boolean }).noResponse = true;
+		throw noResponse;
 	}
 
 	throw new Error(`Request setup error: ${error.message}`);

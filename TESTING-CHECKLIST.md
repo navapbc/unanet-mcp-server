@@ -11,7 +11,7 @@
 ### Prerequisites
 - [ ] Unanet API credentials confirmed working
 - [ ] Claude Desktop installed and running
-- [ ] Node.js 18+ installed
+- [ ] Node.js 20+ installed
 - [ ] Can access Unanet web interface as backup
 
 ## 🧪 Progressive Testing Steps
@@ -47,7 +47,7 @@ Test these in Claude Desktop in order:
 "Show me all active projects"
 ```
 ✅ Success: See your actual projects
-❌ Failure: Check API permissions
+❌ Failure: Extra read tools may be off (`UNANET_ENABLE_LEGACY_READ_TOOLS=true`), or your Unanet account lacks permission (ask Finance)
 
 #### 3. Project Details
 ```

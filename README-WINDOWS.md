@@ -30,7 +30,7 @@ Node.js is required to run the Unanet connector.
 ### Step 2: Download the Unanet Connector (2 minutes)
 
 1. **Download the connector** from GitHub:
-   - Go to: https://github.com/culstrup/unanet-mcp-server
+   - Go to: https://github.com/navapbc/unanet-mcp-server
    - Click the green "Code" button
    - Click "Download ZIP"
    
@@ -53,10 +53,10 @@ Node.js is required to run the Unanet connector.
    - If Windows asks "Do you want to allow this?", click "Yes"
    - A black window (Command Prompt) will open
 
-3. **Follow the prompts**:
-   - The setup will check that everything is installed correctly
-   - It will download necessary files (this takes 1-2 minutes)
-   - When asked "Would you like to edit the .env file now?", type `Y` and press Enter
+3. **Let the setup run**:
+   - It checks that Node.js and npm are installed
+   - It installs and builds the connector (this takes 1-2 minutes)
+   - It creates a `.env` file, pauses, then opens it in Notepad
 
 4. **Enter your Unanet credentials** in Notepad:
    ```
@@ -65,11 +65,12 @@ Node.js is required to run the Unanet connector.
    UNANET_BASE_URL=https://navapbc.unanet.biz
    ```
    - Replace the username and password with your normal Unanet login; leave the URL alone
+   - If your password contains `#` or a space, put single quotes around it: `UNANET_PASSWORD='p#ss word'`. Without them the password is cut off and login fails.
    - **Save the file** (Ctrl+S) and close Notepad
 
-5. **Configure Claude Desktop**:
-   - When asked "Would you like to automatically configure Claude Desktop?", type `Y` and press Enter
-   - The script points Claude Desktop at this folder. Your password stays in `.env` and is never copied into the Claude config.
+5. **Claude Desktop is configured for you**:
+   - The script backs up your existing Claude Desktop config, then adds an `unanet` entry that points at this folder. There is no prompt for this step.
+   - Your password stays in `.env` and is never copied into the Claude config.
 
 ### Step 4: Restart Claude Desktop (1 minute)
 
@@ -85,11 +86,10 @@ Node.js is required to run the Unanet connector.
 1. **Open Claude Desktop**
 
 2. **Test with these commands**:
-   - "Can you connect to Unanet?"
-   - "Show me my active Unanet projects"
-   - "What projects am I working on?"
+   - "What are my Unanet leave balances?"
+   - "Show me my recent Unanet expenses"
 
-If Claude responds with your project information, congratulations! 🎉 You're all set up!
+Compare the leave balances with what Unanet shows in your browser. If they match, you're all set up! 🎉 (Project and timesheet questions need the extra read tools; they are off by default on Windows. See the environment table in `README.md` to turn them on.)
 
 ## 🔧 Troubleshooting
 
@@ -103,12 +103,12 @@ If Claude responds with your project information, congratulations! 🎉 You're a
 
 ### Claude says "I don't have access to Unanet"
 1. Make sure you restarted Claude Desktop
-2. Check that your credentials are correct in both files
+2. Check that your username and password are correct in `.env`
 3. Try the setup again
 
 ### "Failed to install dependencies" error
 - Check your internet connection
-- Temporarily disable antivirus software
+- If it still fails, send the error text to your IT team or Billy Hunt; do not turn off antivirus
 - Try running setup-windows.bat as Administrator (right-click → Run as administrator)
 
 ## 📝 What Can You Ask Claude?
