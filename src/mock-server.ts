@@ -47,11 +47,12 @@ interface MockTimesheet {
 }
 
 const createdTimesheets = new Map<number, MockTimesheet>();
-// The seeded fixture sheets (201-204) answer searches only for workDates in
-// this window. Outside it, search returns created timesheets only, so any
-// ordinary period can be created. Fixture 211 is a separate dated case below.
+// The seeded fixture sheets (201-204) cover 2026-01-01..2026-01-15. Search
+// answers with them only for workDates in that period, plus the explicit
+// SEARCH_KEY_BY_DATE entries. Elsewhere search returns created timesheets only,
+// so any ordinary period can be created. Fixture 211 is a separate case below.
 const SEEDED_TIMESHEETS_START = "2026-01-01";
-const SEEDED_TIMESHEETS_END = "2026-01-31";
+const SEEDED_TIMESHEETS_END = "2026-01-15";
 
 const mockExpenses: any[] = [
 	{
@@ -468,10 +469,14 @@ app.get("/platform/rest/currencies/currency-codes", (_req, res) => {
 	});
 });
 
+// Explicit search answers. 2026-03-05 reproduces a Unanet quirk: search can
+// return a sheet whose period does not contain the requested date, which the
+// timesheet write tools must reject as outside the resolved period.
 const SEARCH_KEY_BY_DATE: Record<string, number> = {
 	"2026-01-02": 202,
 	"2026-01-03": 203,
 	"2026-01-04": 204,
+	"2026-03-05": 201,
 };
 
 function mockTimesheetPeriod(date: string): {
@@ -562,10 +567,15 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 			],
 		});
 	}
-	if (workDate < SEEDED_TIMESHEETS_START || workDate > SEEDED_TIMESHEETS_END) {
+	// Range searches (beginDateStart/End) carry no workDate and keep answering
+	// with the seeded fixture.
+	const inSeededPeriod =
+		workDate === undefined ||
+		(workDate >= SEEDED_TIMESHEETS_START && workDate <= SEEDED_TIMESHEETS_END);
+	const key = SEARCH_KEY_BY_DATE[workDate] ?? (inSeededPeriod ? 201 : undefined);
+	if (key === undefined) {
 		return res.json({ items: [] });
 	}
-	const key = SEARCH_KEY_BY_DATE[workDate] ?? 201;
 	res.json({
 		items: [
 			{

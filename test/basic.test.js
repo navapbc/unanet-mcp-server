@@ -442,6 +442,24 @@ describe("Unanet MCP Server Basic Tests", () => {
 			});
 		});
 
+		it("should create the second January period even though fixtures cover the first", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-01-20", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2026-01-16", endDate: "2026-01-31" },
+			});
+		});
+
 		it("should flag, not fail, a create response with no key", async () => {
 			const { createTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
@@ -553,7 +571,7 @@ describe("Unanet MCP Server Basic Tests", () => {
 					entries: [
 						{
 							projectId: "AI-PROJECT",
-							date: "2026-01-20",
+							date: "2026-03-05",
 							hours: 1,
 						},
 					],
