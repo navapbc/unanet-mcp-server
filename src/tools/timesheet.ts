@@ -1438,31 +1438,6 @@ export const getMyTimesheetProjectsTool = {
 	},
 };
 
-// Submit expense tool
-export const submitExpenseTool = {
-	name: "unanet_submit_expense",
-	description:
-		"Create an expense report shell via Platform REST. Project allocation details require Platform-specific keys.",
-	inputSchema: z.object({
-		projectId: z.string(),
-		date: z.string().describe("Date in YYYY-MM-DD format"),
-		category: z
-			.string()
-			.describe("Expense category (e.g., Travel, Meals, Supplies)"),
-		amount: z.number().positive(),
-		description: z.string(),
-		reimbursable: z.boolean().default(true),
-	}),
-	handler: async (args: any, _auth: UnanetAuth) => {
-		return {
-			success: false,
-			error:
-				"Platform REST expense creation requires expenseProjectAllocations with Unanet keys, not the legacy projectId/category/amount shape. This tool needs a dedicated expense-allocation implementation before it can safely write.",
-			requestedExpense: args,
-		};
-	},
-};
-
 // Approve timesheet tool
 export const approveTimesheetTool = {
 	name: "unanet_approve_timesheet",
@@ -1490,9 +1465,8 @@ export const approveTimesheetTool = {
 		try {
 			await client.post(
 				`/me/approvals/time/manager/${args.timesheetId}/approve`,
-				{
-					comments: args.comments,
-				},
+				// ApproveModel field is `comment` (singular).
+				{ comment: args.comments },
 			);
 
 			return {

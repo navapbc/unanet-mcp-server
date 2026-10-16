@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { basename, extname } from "node:path";
 import { z } from "zod";
 import { type UnanetAuth, createUnanetClient } from "../auth.js";
+import { checkLocalAttachmentPath } from "../utils/attachments.js";
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -205,7 +206,7 @@ function summarizeAllocation(allocation: any) {
 	};
 }
 
-function summarizeDetail(detail: any) {
+export function summarizeDetail(detail: any) {
 	const expenseType = firstPresent(
 		detail?.expenseType?.expenseTypeName,
 		detail?.expenseType?.name,
@@ -239,7 +240,7 @@ function summarizeDetail(detail: any) {
 	};
 }
 
-function summarizeExpense(expense: any) {
+export function summarizeExpense(expense: any) {
 	const details = expense?.expenseDetails ?? [];
 	return {
 		key: expense?.key ?? null,
@@ -318,21 +319,45 @@ function matchedLineItems(
 		}));
 }
 
-function normalizeErrors(validation: any): string[] {
+// ValidationItemModel is { projectKey, taskKey, violations[] } and
+// WizardValidationItemModel carries { expenseDate, expenseTypeName, ... }; keep
+// the text and where it applies instead of String()-ing the object.
+function describeValidationItem(item: any): string {
+	if (typeof item === "string") return item;
+	if (item === null || typeof item !== "object") return String(item);
+	const where = [
+		item.projectKey !== undefined ? `project ${item.projectKey}` : null,
+		item.taskKey !== undefined && item.taskKey !== null ? `task ${item.taskKey}` : null,
+		item.expenseTypeName,
+		item.expenseDate,
+	]
+		.filter(Boolean)
+		.join(", ");
+	const what = [
+		...(Array.isArray(item.violations) ? item.violations : []),
+		item.message,
+		item.description,
+	]
+		.filter(Boolean)
+		.join("; ");
+	return [where && `(${where})`, what].filter(Boolean).join(" ") || JSON.stringify(item);
+}
+
+export function normalizeErrors(validation: any): string[] {
 	return [
 		...(validation?.expenseReportErrors ?? []),
 		...(validation?.expenseErrors ?? []),
 		...(validation?.wizardErrors ?? []),
 		...(validation?.wizardReceiptErrors ?? []),
-	].map(String);
+	].map(describeValidationItem);
 }
 
-function normalizeWarnings(validation: any): string[] {
+export function normalizeWarnings(validation: any): string[] {
 	return [
 		...(validation?.expenseReportWarnings ?? []),
 		...(validation?.expenseWarnings ?? []),
 		...(validation?.wizardWarnings ?? []),
-	].map(String);
+	].map(describeValidationItem);
 }
 
 function compactParams(
@@ -399,19 +424,19 @@ function refineDateRange(
 	}
 }
 
-const allocationInputSchema = z.object({
+export const allocationInputSchema = z.object({
 	projectKey: z.number().int().positive(),
 	taskKey: z.number().int().positive().optional(),
 	allocation: z.number().positive().max(100),
 });
 
-const wizardSchema = z
+export const wizardSchema = z
 	.object({
 		type: z.string().min(1),
 	})
 	.passthrough();
 
-function assertAllocationsTotal100(
+export function assertAllocationsTotal100(
 	allocations: Array<z.infer<typeof allocationInputSchema>>,
 ) {
 	const total = allocations.reduce(
@@ -696,6 +721,9 @@ export const createExpenseReportDraftTool = {
 		expenseProjectAllocations: z.array(allocationInputSchema).min(1),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
+		if (args.confirm !== true) {
+			return { success: false, error: "confirm=true is required before creating a draft expense report." };
+		}
 		try {
 			assertAllocationsTotal100(args.expenseProjectAllocations);
 			const client = createUnanetClient(auth);
@@ -765,6 +793,9 @@ export const addExpenseDetailTool = {
 		validateAfterAdd: z.boolean().optional().default(true),
 	}),
 	handler: async (args: any, auth: UnanetAuth) => {
+		if (args.confirm !== true) {
+			return { success: false, error: "confirm=true is required before adding an expense detail." };
+		}
 		try {
 			const client = createUnanetClient(auth);
 			const expenseResponse = await client.get(
@@ -941,6 +972,9 @@ export const addExpenseAttachmentTool = {
 			}
 		}),
 	handler: async (args: any, auth: UnanetAuth) => {
+		if (args.confirm !== true) {
+			return { success: false, error: "confirm=true is required before uploading a receipt attachment." };
+		}
 		try {
 			let base64Data: string;
 			let length: number;
@@ -950,9 +984,13 @@ export const addExpenseAttachmentTool = {
 			}
 
 			if (args.filePath) {
+				const checked = checkLocalAttachmentPath(args.filePath, "read");
+				if (!checked.ok) {
+					return { success: false, error: checked.error };
+				}
 				let buffer: Buffer;
 				try {
-					buffer = readFileSync(args.filePath);
+					buffer = readFileSync(checked.path);
 				} catch (readError: any) {
 					return {
 						success: false,

@@ -111,9 +111,10 @@ export const getFinancialReportTool = {
 			const response = await client.post(
 				"/invoices/search",
 				{
+					// DateRangeModel: { rangeStart, rangeEnd }
 					invoiceDate: {
-						start: args.startDate,
-						end: args.endDate,
+						rangeStart: args.startDate,
+						rangeEnd: args.endDate,
 					},
 				},
 				{ params: { page: 1, pageSize: 50 } },

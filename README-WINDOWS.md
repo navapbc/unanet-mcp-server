@@ -89,7 +89,7 @@ Node.js is required to run the Unanet connector.
    - "What are my Unanet leave balances?"
    - "Show me my recent Unanet expenses"
 
-Compare the leave balances with what Unanet shows in your browser. If they match, you're all set up! 🎉 (Project and timesheet questions need the extra read tools; they are off by default on Windows. See the environment table in `README.md` to turn them on.)
+Compare the leave balances with what Unanet shows in your browser. If they match, you're all set up! 🎉 (Project, people and contract questions need the org-level read tools; they are off by default. See the environment table in `README.md` to turn them on.)
 
 ## 🔧 Troubleshooting
 

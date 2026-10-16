@@ -6,6 +6,7 @@
  */
 
 import express from "express";
+import { registerExtendedMockRoutes } from "./mock-routes-extended.js";
 
 const app = express();
 // Raised from the 100kb default so base64 receipt bodies (multi-MB) are
@@ -130,7 +131,22 @@ const mockExpenses: any[] = [
 	},
 ];
 
+let loginCount = 0;
+// Keys (never values) of the last login body, so tests can see whether
+// customerId was sent.
+let lastLoginBodyKeys: string[] = [];
+app.get("/platform/rest/__test/login-count", (_req, res) => res.json({ count: loginCount }));
+app.get("/platform/rest/__test/last-login-keys", (_req, res) =>
+	res.json({ keys: lastLoginBodyKeys }),
+);
+app.post("/platform/rest/__test/reset-login-count", (_req, res) => {
+	loginCount = 0;
+	res.json({ count: loginCount });
+});
+
 app.post("/platform/rest/login", (req, res) => {
+	loginCount += 1;
+	lastLoginBodyKeys = Object.keys(req.body || {}).sort();
 	const { username, password } = req.body || {};
 
 	if (username !== "test-user" || password !== "test-pass") {
@@ -143,6 +159,50 @@ app.post("/platform/rest/login", (req, res) => {
 			expiresIn: 900,
 		},
 	});
+});
+
+// Error-shape test routes (no auth): a 403/401 with Unanet's errors[] body, and
+// a 503 on any method so tests can tell a failed read from a failed write.
+app.get("/platform/rest/__test/forbidden", (_req, res) =>
+	res.status(403).json({ errors: [{ code: "FORBIDDEN_INSUFFICIENT_ROLE", description: "Role is missing" }] }),
+);
+app.get("/platform/rest/__test/unauthorized", (_req, res) =>
+	res.status(401).json({ errors: [{ code: "UNAUTHORIZED", description: "Session expired" }] }),
+);
+app.all("/platform/rest/__test/service-unavailable", (_req, res) =>
+	res.status(503).json({ error: "Service unavailable" }),
+);
+
+// One-shot fault for the next mutating request to any route registered after
+// this point (login and __test routes are exempt). The request is not
+// processed, so a test can also use "still pending" to prove that a tool never
+// sent a mutating request.
+let nextWriteFault: "503" | "no-response" | null = null;
+app.get("/platform/rest/__test/write-fault", (_req, res) => res.json({ pending: nextWriteFault }));
+app.post("/platform/rest/__test/next-write-fault", (req, res) => {
+	nextWriteFault = req.body?.mode ?? null;
+	res.json({ pending: nextWriteFault });
+});
+app.use((req, res, next) => {
+	const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
+	if (!nextWriteFault || !mutating || req.path.startsWith("/platform/rest/__test/")) return next();
+	const fault = nextWriteFault;
+	nextWriteFault = null;
+	if (fault === "no-response") {
+		req.socket.destroy();
+		return;
+	}
+	return res.status(503).json({ error: "Service unavailable" });
+});
+
+// Extended surface (timesheet lifecycle, leave requests, approvals, reviews,
+// user, expense lifecycle, directory). Registered before the `:id` routes below
+// so literal segments such as /me/time/time-periods take precedence.
+registerExtendedMockRoutes(app, {
+	mockExpenses,
+	mockAttachments,
+	nextDetailKey: () => nextExpenseDetailKey++,
+	nextAttachmentKey: () => nextAttachmentKey++,
 });
 
 app.post("/platform/rest/me/leave", (req, res) => {
@@ -654,6 +714,16 @@ app.get("/platform/rest/me/time/:id", (req, res) => {
 	if (created) {
 		return res.json(created);
 	}
+	// Delete-guard fixtures: a total with no timeslips, and neither.
+	if (key === 221) return res.json({ key, status: "INUSE", hours: 8 });
+	if (key === 222) return res.json({ key, status: "INUSE" });
+	if (key === 223) return res.json({ key, status: "INUSE", timeslips: [{ key: 1 }] });
+	if (key === 224) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: "n/a" }] });
+	if (key === 225) return res.json({ key, status: "INUSE", hours: 0, timeslips: [] });
+	if (key === 226) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: false }] });
+	if (key === 227) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: [] }] });
+	if (key === 228) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: "  " }] });
+	if (key === 229) return res.json({ key, status: "INUSE", hours: false });
 	const partialSheet = Object.values(PARTIAL_PERIOD_SHEETS).find(
 		(sheet) => sheet.key === key,
 	);

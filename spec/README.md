@@ -14,8 +14,15 @@ npm run fetch-spec
 curl -s -o spec/unanet-openapi.json https://dev.portal.unanet.io/platform/rest/openapi.json
 ```
 
-A navigable, Obsidian-friendly catalog and an MCP coverage/roadmap tracker live
-in the Second Brain at `nava/projects/unanet-mcp-server/`:
+Two derived files are generated from the spec by `npm run build-catalog` and are
+also committed (regenerate after every `fetch-spec`):
 
-- `unanet-rest-api-catalog.md` — all operations grouped by resource group
-- `mcp-coverage.md` — what is exposed via MCP and the build-out order
+- `api-catalog.json` — one entry per operation (method, path, tag, summary,
+  params, request/response schema names) plus a `kind` classification:
+  `read` (GET or POST search/retrieve), `write` (plain create/update), or
+  `sensitive` (submit/approve/disapprove/delete/post/void/cancel/send/extract/
+  lock/auth, plus reads that can return credentials, tokens, bank, payroll or
+  configuration data). The MCP tool `unanet_api_read` only executes `read`
+  operations; there is no generic writer.
+- `api-schemas.json` — shallow (one-level) view of every component schema, used
+  by `unanet_api_describe_operation` to expand request/response bodies.

@@ -11,6 +11,10 @@ export interface UnanetAuth {
 	password: string;
 	baseUrl: string;
 	appName?: string;
+	// Optional tenant id for the login body. Omitted unless UNANET_CUSTOMER_ID
+	// is set: the OpenAPI spec marks it optional and the Nava tenant logs in
+	// without it, so nothing is guessed from the base URL.
+	customerId?: string;
 }
 
 export type UnanetClient = AxiosInstance;
@@ -26,6 +30,10 @@ interface PlatformTokenCacheEntry {
 }
 
 const platformTokenCache = new Map<string, PlatformTokenCacheEntry>();
+// In-flight logins keyed like the token cache, so N concurrent requests on a
+// cold cache share ONE login instead of each posting /login (Unanet rejects
+// bursts of concurrent logins with 400).
+const platformLoginInFlight = new Map<string, Promise<string>>();
 
 const platformLoginTokenPayloadSchema = z
 	.object({
@@ -157,68 +165,105 @@ function safeUrlForLog(url?: string): string {
 		.replace(/token=([^&]+)/gi, "token=***");
 }
 
-function apiError(message: string, status?: number): Error {
-	const err = new Error(message);
-	if (status !== undefined) {
-		(err as Error & { status?: number }).status = status;
+// Callers URL-encode path parameters, but dot segments survive encoding and
+// the HTTP client collapses them, which would send the request to a different
+// resource than the one named. Refuse them for every tool.
+function assertNoDotSegments(url?: string): void {
+	if (!url) return;
+	for (const segment of url.split("?")[0].split("/")) {
+		let decoded = segment;
+		try {
+			decoded = decodeURIComponent(segment);
+		} catch {
+			// Keep the raw segment.
+		}
+		if (decoded === "." || decoded === "..") {
+			throw new Error("Refusing a request path that contains a dot segment.");
+		}
 	}
+}
+
+type ApiError = Error & { status?: number; method?: string; noResponse?: boolean };
+
+function apiError(message: string, status?: number, method?: string): Error {
+	const err: ApiError = new Error(message);
+	if (status !== undefined) err.status = status;
+	if (method) err.method = method;
 	return err;
 }
 
-// True when a request may have been applied by Unanet even though it failed:
-// the request was sent and no response came back, or Unanet answered 5xx.
-// A failure that happens before the request is sent (login, setup) is not.
+const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
+
+// True when a MUTATING request may have been applied by Unanet even though it
+// failed: it was sent and no response came back, or Unanet answered 5xx. A
+// failed read, or a failure before the request is sent (login, setup), is not.
 export function isOutcomeUnknown(error: unknown): boolean {
 	if (typeof error !== "object" || error === null) return false;
-	const { noResponse, status } = error as {
-		noResponse?: boolean;
-		status?: number;
-	};
+	const { noResponse, status, method } = error as ApiError;
+	if (!method || !MUTATING_METHODS.has(method)) return false;
 	return noResponse === true || (typeof status === "number" && status >= 500);
 }
 
+/**
+ * Pull Unanet's own error description out of a platform REST error body, e.g.
+ * {errors:[{code:"FORBIDDEN_INSUFFICIENT_LICENSE",description:"Insufficient
+ * license for API access."}]}. Returns "" when the body has no usable detail.
+ */
+function unanetErrorDetail(data: unknown): string {
+	if (!data || typeof data !== "object") return "";
+	const body = data as {
+		errors?: Array<{ code?: string; description?: string }>;
+		code?: string;
+		description?: string;
+	};
+	const first = body.errors?.[0];
+	const description = first?.description ?? body.description ?? "";
+	const code = first?.code ?? body.code ?? "";
+	if (!description && !code) return "";
+	return ` Unanet says: ${[code, description].filter(Boolean).join(" — ")}`;
+}
+
 function handleApiError(error: any): never {
+	const method = String(error.config?.method ?? "").toLowerCase();
 	if (error.response) {
 		const status = error.response.status;
 		const statusText = error.response.statusText;
+		const detail = unanetErrorDetail(error.response.data);
 
 		console.error(`[Unanet API] Response error: ${status} ${statusText}`);
 
 		switch (status) {
 			case 401:
 				throw apiError(
-					"Authentication failed. Please check your credentials.",
+					`Authentication failed. Please check your credentials.${detail}`,
 					status,
+					method,
 				);
 			case 403:
 				throw apiError(
-					"Access forbidden. Your Unanet account does not have permission for this operation.",
+					`Access forbidden. Your Unanet account does not have permission for this operation.${detail}`,
 					status,
+					method,
 				);
 			case 429:
-				throw apiError("Rate limit exceeded. Please try again later.", status);
+				throw apiError("Rate limit exceeded. Please try again later.", status, method);
 			case 404:
 				throw apiError(
 					"Resource not found. Please check the ID and try again.",
 					status,
-				);
-			case 500:
-			case 502:
-			case 503:
-				throw apiError(
-					"Unanet service is temporarily unavailable. Please try again later.",
-					status,
+					method,
 				);
 			default:
-				throw apiError(`API error: ${status} ${statusText}`, status);
+				throw apiError(`API error: ${status} ${statusText}`, status, method);
 		}
 	}
 
 	if (error.request) {
-		const noResponse = new Error(
+		const noResponse: ApiError = new Error(
 			"No response from Unanet API. Please check your network connection and base URL.",
 		);
-		(noResponse as Error & { noResponse?: boolean }).noResponse = true;
+		noResponse.noResponse = true;
+		noResponse.method = method;
 		throw noResponse;
 	}
 
@@ -264,9 +309,9 @@ export function createUnanetClient(auth: UnanetAuth): UnanetClient {
 	});
 
 	client.interceptors.request.use(async (config) => {
+		assertNoDotSegments(config.url);
 		const token = await getPlatformBearerToken(auth);
 		config.headers.Authorization = `Bearer ${token}`;
-
 		if (
 			config.url?.startsWith("/") &&
 			!config.url.startsWith("/platform/rest/")
@@ -310,7 +355,7 @@ export function createPlatformRestClient(
 }
 
 function platformTokenCacheKey(auth: UnanetAuth): string {
-	return `${auth.baseUrl}|${auth.username}|${auth.appName || DEFAULT_UNANET_APP_NAME}`;
+	return `${auth.baseUrl}|${auth.username}|${auth.appName || DEFAULT_UNANET_APP_NAME}|${auth.customerId ?? ""}`;
 }
 
 function getPlatformTokenExpiration(
@@ -333,6 +378,7 @@ function getPlatformTokenExpiration(
 	return now + DEFAULT_PLATFORM_TOKEN_TTL_MS;
 }
 
+
 export async function getPlatformBearerToken(
 	auth: UnanetAuth,
 ): Promise<string> {
@@ -342,31 +388,45 @@ export async function getPlatformBearerToken(
 		return cached.token;
 	}
 
-	const client = createPlatformRestClient(auth);
-	const response = await client.post("/platform/rest/login", {
-		username: auth.username,
-		password: auth.password,
-	});
+	const inFlight = platformLoginInFlight.get(cacheKey);
+	if (inFlight) return inFlight;
 
-	const parsed = platformLoginResponseSchema.safeParse(response.data);
-	if (!parsed.success) {
-		throw new Error("Unexpected Unanet login response shape");
+	const login = (async () => {
+		const client = createPlatformRestClient(auth);
+		const response = await client.post("/platform/rest/login", {
+			...(auth.customerId ? { customerId: auth.customerId } : {}),
+			username: auth.username,
+			password: auth.password,
+		});
+
+		const parsed = platformLoginResponseSchema.safeParse(response.data);
+		if (!parsed.success) {
+			throw new Error("Unexpected Unanet login response shape");
+		}
+
+		const tokenPayload = parsed.data.message ?? parsed.data;
+		const token = tokenPayload.token;
+		if (!token) {
+			throw new Error("Unexpected Unanet login response shape");
+		}
+
+		platformTokenCache.set(cacheKey, {
+			token,
+			expiresAt: getPlatformTokenExpiration(tokenPayload),
+		});
+
+		return token;
+	})();
+
+	platformLoginInFlight.set(cacheKey, login);
+	try {
+		return await login;
+	} finally {
+		platformLoginInFlight.delete(cacheKey);
 	}
-
-	const tokenPayload = parsed.data.message ?? parsed.data;
-	const token = tokenPayload.token;
-	if (!token) {
-		throw new Error("Unexpected Unanet login response shape");
-	}
-
-	platformTokenCache.set(cacheKey, {
-		token,
-		expiresAt: getPlatformTokenExpiration(tokenPayload),
-	});
-
-	return token;
 }
 
 export function clearPlatformTokenCache(): void {
 	platformTokenCache.clear();
+	platformLoginInFlight.clear();
 }

@@ -47,7 +47,7 @@ Test these in Claude Desktop in order:
 "Show me all active projects"
 ```
 ✅ Success: See your actual projects
-❌ Failure: Extra read tools may be off (`UNANET_ENABLE_LEGACY_READ_TOOLS=true`), or your Unanet account lacks permission (ask Finance)
+❌ Failure: Org-level read tools may be off (`UNANET_ENABLE_EXTENDED_READ_TOOLS=true`), or your Unanet account lacks permission (ask Finance)
 
 #### 3. Project Details
 ```
