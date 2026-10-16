@@ -359,15 +359,24 @@ export const deleteTimesheetTool = {
 			// Emptiness must be established, not assumed. Take the larger of the
 			// hours summed from timeslips (only when the list is present and every
 			// entry has a usable number; hoursWorked is optional in the spec) and
-			// the summary total, and refuse when neither is available.
+			// the summary total, and refuse when neither is available. Only finite
+			// numbers and non-blank numeric strings count: false, [] or "" are not 0.
+			const usableHours = (value: unknown): number | null => {
+				if (typeof value === "number") return Number.isFinite(value) ? value : null;
+				if (typeof value === "string" && value.trim() !== "") {
+					const numeric = Number(value);
+					return Number.isFinite(numeric) ? numeric : null;
+				}
+				return null;
+			};
 			const slipValues = Array.isArray(detail?.timeslips)
-				? detail.timeslips.map((timeslip: any) => toNumberOrNull(timeslip?.hoursWorked))
+				? detail.timeslips.map((timeslip: any) => usableHours(timeslip?.hoursWorked))
 				: null;
 			const slipHours =
 				slipValues && slipValues.every((value: number | null) => value !== null)
 					? slipValues.reduce((sum: number, value: number | null) => sum + (value ?? 0), 0)
 					: null;
-			const known = [slipHours, toNumberOrNull(detail?.hours)].filter(
+			const known = [slipHours, usableHours(detail?.hours)].filter(
 				(value): value is number => value !== null,
 			);
 			const hours = known.length ? Math.max(...known) : null;

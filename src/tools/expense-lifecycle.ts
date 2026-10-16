@@ -529,11 +529,14 @@ export const searchImportedExpensesTool = {
 			const data = response.data;
 			const isObject = (entry: unknown) => entry !== null && typeof entry === "object" && !Array.isArray(entry);
 			const isEnvelope = (entry: any) => isObject(entry) && Array.isArray(entry.items);
+			// A record with paging fields is a (malformed) envelope, never a data row.
+			const looksLikeEnvelope = (entry: any) =>
+				isObject(entry) && ("items" in entry || "pageCount" in entry || "resultCount" in entry);
 			let envelopes: any[] | null = null;
 			let rows: any[] | null = null;
 			if (Array.isArray(data) && data.length > 0 && data.every(isEnvelope)) {
 				envelopes = data;
-			} else if (Array.isArray(data) && data.every((entry: any) => isObject(entry) && !isEnvelope(entry))) {
+			} else if (Array.isArray(data) && data.every((entry: any) => isObject(entry) && !looksLikeEnvelope(entry))) {
 				rows = data;
 			} else if (isEnvelope(data)) {
 				envelopes = [data];

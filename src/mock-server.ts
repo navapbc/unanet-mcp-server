@@ -720,6 +720,10 @@ app.get("/platform/rest/me/time/:id", (req, res) => {
 	if (key === 223) return res.json({ key, status: "INUSE", timeslips: [{ key: 1 }] });
 	if (key === 224) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: "n/a" }] });
 	if (key === 225) return res.json({ key, status: "INUSE", hours: 0, timeslips: [] });
+	if (key === 226) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: false }] });
+	if (key === 227) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: [] }] });
+	if (key === 228) return res.json({ key, status: "INUSE", timeslips: [{ key: 1, hoursWorked: "  " }] });
+	if (key === 229) return res.json({ key, status: "INUSE", hours: false });
 	const partialSheet = Object.values(PARTIAL_PERIOD_SHEETS).find(
 		(sheet) => sheet.key === key,
 	);

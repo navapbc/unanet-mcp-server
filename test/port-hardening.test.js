@@ -226,7 +226,7 @@ describe("hardening", () => {
 
 			// Timeslips with missing or unusable hours are not proof of an empty sheet.
 			const afterRefusals = (await mockGet("/__test/deleted-timesheets")).keys;
-			for (const timesheetId of [223, 224]) {
+			for (const timesheetId of [223, 224, 226, 227, 228, 229]) {
 				const refused = await deleteTimesheetTool.handler({ timesheetId, allowNonEmpty: false, confirm: true }, auth);
 				expect(refused.success, `timesheet ${timesheetId}`).toBe(false);
 				expect(refused.error).toContain("Could not establish");
@@ -373,7 +373,7 @@ describe("hardening", () => {
 			const single = await searchImportedExpensesTool.handler(base, auth);
 			expect(single.importedExpenses[0].key).toBe(8801);
 
-			for (const vendor of ["SCALAR", "OBJECT", "MIXED"]) {
+			for (const vendor of ["SCALAR", "OBJECT", "MIXED", "BADENV", "BADENV2"]) {
 				const bad = await searchImportedExpensesTool.handler({ ...base, vendors: [vendor] }, auth);
 				expect(bad.success, vendor).toBe(false);
 				expect(bad.error).toContain("Unexpected response shape");

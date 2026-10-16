@@ -291,6 +291,8 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		if (vendors.includes("SCALAR")) return res.json("unexpected response");
 		if (vendors.includes("OBJECT")) return res.json({ message: "no items here" });
 		if (vendors.includes("MIXED")) return res.json([paged([{ key: 1 }]), { key: 2 }]);
+		if (vendors.includes("BADENV")) return res.json([{ items: null, pageCount: 1 }]);
+		if (vendors.includes("BADENV2")) return res.json([{ items: "wrong", pageCount: 1 }]);
 		res.json(paged(status === "USED" ? [] : [{ key: 8801, vendor: "UBER", amount: 23.4, expenseDate: "2026-05-18", status: "AVAILABLE" }]));
 	});
 	app.put("/platform/rest/me/expenses/:id", (req, res) => {
