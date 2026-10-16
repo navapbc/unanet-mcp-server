@@ -1173,14 +1173,18 @@ describe("Unanet MCP Server Basic Tests", () => {
 			expect(stored.summary).toBe("Parking");
 			expect("wizard" in stored).toBe(false);
 
-			// A type that needs a wizard: Unanet's own validation text reaches the caller.
+			// A type that needs a wizard: the caller gets Unanet's error code and the
+			// field it points at, not its support-staff description or context values.
 			const missingWizard = await addExpenseDetailTool.handler(
 				{ ...plainArgs, expenseTypeKey: 9998 },
 				auth,
 			);
 			expect(missingWizard.success).toBe(false);
 			expect(missingWizard.error).toContain("VALIDATION_MUST_NOT_BE_NULL");
-			expect(missingWizard.error).toContain("wizard must not be null");
+			expect(missingWizard.error).toContain("fields: wizard");
+			expect(missingWizard.error).not.toContain("SUPPORT-ONLY");
+			expect(missingWizard.error).not.toContain("do not echo");
+			expect(missingWizard.error).not.toContain("secret value");
 
 			const validation = await validateExpenseReportTool.handler(
 				{ expenseId: draft.expenseId },

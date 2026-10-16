@@ -249,8 +249,9 @@ describe("hardening", () => {
 			expect(isOutcomeUnknown(readError)).toBe(false);
 			expect(isOutcomeUnknown(writeError)).toBe(true);
 			expect(writeError.message).not.toMatch(/try again later/i);
-			// 5xx descriptions are for Unanet support staff and stay out of the message.
-			expect(writeError.message).not.toContain("Unanet says");
+			// 5xx bodies stay out of the message entirely (support-staff text and codes).
+			expect(writeError.message).not.toContain("Unanet error code");
+			expect(writeError.message).not.toContain("UNAVAILABLE");
 			expect(writeError.message).not.toContain("internal detail");
 			const loginError = await createUnanetClient({ ...auth, username: "nobody" })
 				.post("/me/leave-requests", {})

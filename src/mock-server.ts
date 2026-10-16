@@ -403,7 +403,13 @@ app.post("/platform/rest/me/expenses/:id/details", (req, res) => {
 	// line with a 400 and its own error body when none is sent.
 	if (req.body?.expenseTypeKey === 9998 && !req.body?.wizard) {
 		return res.status(400).json({
-			errors: [{ code: "VALIDATION_MUST_NOT_BE_NULL", description: "wizard must not be null" }],
+			errors: [
+				{
+					code: "VALIDATION_MUST_NOT_BE_NULL",
+					description: "SUPPORT-ONLY free text about the wizard",
+					context: { wizard: "null", "secret value": "do not echo" },
+				},
+			],
 		});
 	}
 	const detail = {

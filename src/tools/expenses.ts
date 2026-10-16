@@ -790,7 +790,7 @@ export const addExpenseDetailTool = {
 		wizard: wizardSchema
 			.optional()
 			.describe(
-				"Unanet expense wizard payload with a discriminator `type` (AIR, LODGING_PER_DIEM, MIE_PER_DIEM, MILEAGE, EMP_BUS_MTG...). Provide it for expense types whose reference-data wizardType is set. Plain types (wizardType null, such as parking) have no wizard; omit it. If Unanet rejects the line, the error includes Unanet's error code and description when it sends them.",
+				"Unanet expense wizard payload with a discriminator `type` (AIR, LODGING_PER_DIEM, MIE_PER_DIEM, MILEAGE, EMP_BUS_MTG...). Provide it for expense types whose reference-data wizardType is set. Plain types (wizardType null, such as parking) have no wizard; omit it.",
 			),
 		validateAfterAdd: z.boolean().optional().default(true),
 	}),
