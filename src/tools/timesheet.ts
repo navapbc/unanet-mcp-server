@@ -589,12 +589,30 @@ export const createTimesheetTool = {
 			const existing = await searchTimesheet(client, args.date);
 			const existingKey = numericKey(existing?.key ?? existing?.id);
 			if (existingKey) {
-				return {
-					success: false,
-					created: false,
-					error: `A timesheet already exists for the period containing ${args.date}.`,
-					timesheetKey: existingKey,
-				};
+				// Search can return a sheet for another period, so load it and
+				// compare periods before calling this a duplicate (same check as
+				// loadWritableTimesheet).
+				const found = await getTimesheet(client, { key: existingKey });
+				if (dateWithinTimesheet(args.date, found)) {
+					return {
+						success: false,
+						created: false,
+						error: `A timesheet already exists for the period containing ${args.date}.`,
+						timesheetKey: existingKey,
+					};
+				}
+				const foundPeriod = timesheetPeriod(found);
+				if (
+					foundPeriod.startDate === "unknown" ||
+					foundPeriod.endDate === "unknown"
+				) {
+					return {
+						success: false,
+						created: false,
+						error: `Could not determine the period of timesheet ${existingKey} that Unanet returned for ${args.date}, so no timesheet was created. Check the period in Unanet.`,
+						timesheetKey: existingKey,
+					};
+				}
 			}
 
 			let createResponse;

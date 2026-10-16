@@ -469,14 +469,16 @@ app.get("/platform/rest/currencies/currency-codes", (_req, res) => {
 	});
 });
 
-// Explicit search answers. 2026-03-05 reproduces a Unanet quirk: search can
-// return a sheet whose period does not contain the requested date, which the
-// timesheet write tools must reject as outside the resolved period.
+// Explicit search answers. 2026-03-05 and 2026-04-07 reproduce a Unanet quirk:
+// search can return a sheet whose period does not contain the requested date.
+// Write tools must reject it as outside the resolved period (2026-03-05), and
+// the create tool must not mistake it for a same-period duplicate (2026-04-07).
 const SEARCH_KEY_BY_DATE: Record<string, number> = {
 	"2026-01-02": 202,
 	"2026-01-03": 203,
 	"2026-01-04": 204,
 	"2026-03-05": 201,
+	"2026-04-07": 201,
 };
 
 function mockTimesheetPeriod(date: string): {
@@ -567,6 +569,10 @@ app.post("/platform/rest/me/time/search", (req, res) => {
 			],
 		});
 	}
+	// A sheet whose period Unanet does not report at all (see GET below).
+	if (workDate === "2026-05-06") {
+		return res.json({ items: [{ key: 212, status: "INUSE" }] });
+	}
 	// Range searches (beginDateStart/End) carry no workDate and keep answering
 	// with the seeded fixture.
 	const inSeededPeriod =
@@ -613,6 +619,9 @@ app.get("/platform/rest/me/time/:id", (req, res) => {
 	}
 	if (created) {
 		return res.json(created);
+	}
+	if (key === 212) {
+		return res.json({ key, status: "INUSE" });
 	}
 	res.json({
 		key,

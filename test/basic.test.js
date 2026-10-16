@@ -460,6 +460,45 @@ describe("Unanet MCP Server Basic Tests", () => {
 			});
 		});
 
+		it("should not mistake a sheet for another period for a same-period duplicate", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+
+			// Search returns fixture 201 (2026-01-01..15) for this date.
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-04-07", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: true,
+				created: true,
+				verified: true,
+				period: { startDate: "2026-04-01", endDate: "2026-04-15" },
+			});
+		});
+
+		it("should create nothing when the found timesheet reports no period", async () => {
+			const { createTimesheetTool } = await import(
+				"../dist/tools/timesheet.js"
+			);
+			const createsBefore = await mockCount("timesheet-create-count");
+
+			const result = await createTimesheetTool.handler(
+				{ date: "2026-05-06", confirm: true },
+				createAuth,
+			);
+
+			expect(result).toMatchObject({
+				success: false,
+				created: false,
+				timesheetKey: 212,
+			});
+			expect(result.error).toContain("Could not determine the period");
+			expect(await mockCount("timesheet-create-count")).toBe(createsBefore);
+		});
+
 		it("should flag, not fail, a create response with no key", async () => {
 			const { createTimesheetTool } = await import(
 				"../dist/tools/timesheet.js"
