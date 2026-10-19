@@ -12,6 +12,8 @@ export interface MockState {
 	nextAttachmentKey: () => number;
 }
 
+const assignmentPosts: any[] = [];
+
 const oversizedName = (id: number) =>
 	id === 998 ? "x".repeat(250_000) : id === 997 ? "x".repeat(199_800) : "New Jersey Department of Labor";
 
@@ -373,11 +375,30 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 	// ---- Directory reads ------------------------------------------------------
 	app.post("/platform/rest/people/search", (req, res) => {
 		const name = String(req.body?.name ?? "").toLowerCase();
+		const email = String(req.body?.email ?? "").toLowerCase();
+		const person = (key: number, first: string, last: string, mail: string, active = true) => ({
+			key, username: first.toLowerCase(), firstName: first, lastName: last, email: mail, active,
+			organization: { key: 1, name: "Delivery", code: "DEL" },
+		});
 		const people = [
 			{ key: 9, username: "test-user", firstName: "Test", lastName: "User", email: "test@example.com", active: true, organization: { key: 1, name: "Delivery", code: "DEL" } },
 			{ key: 10, username: "jane", firstName: "Jane", lastName: "Smith", email: "jane@example.com", active: true, organization: { key: 1, name: "Delivery", code: "DEL" } },
+			person(11, "Sam", "Lee", "sam@example.com"),
+			person(12, "Dup", "One", "dup@example.com"),
+			person(13, "Dup", "Two", "dup@example.com"),
+			person(14, "Gone", "Person", "gone@example.com", false),
+			person(97, "Rejected", "Person", "rejected@example.com"),
 		];
-		res.json(paged(people.filter((p) => !name || `${p.firstName} ${p.lastName} ${p.username}`.toLowerCase().includes(name))));
+		res.json(
+			paged(
+				people
+					.filter((p) => !name || `${p.firstName} ${p.lastName} ${p.username}`.toLowerCase().includes(name))
+					// Like the real search this is loose: a substring match that ignores the
+					// active flag, so tests can prove the tool still demands an exact,
+					// active email.
+					.filter((p) => !email || p.email.includes(email.split("@")[0])),
+			),
+		);
 	});
 	app.get("/platform/rest/people/:id", (req, res) =>
 		res.json({ key: Number(req.params.id), username: "jane", firstName: "Jane", lastName: "Smith", email: "jane@example.com", active: true, idCode1: "ID-777", organization: { key: 1, name: "Delivery", code: "DEL" }, laborCategory: { key: 384, name: "Software Engineer" } }),
@@ -426,7 +447,52 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		if (invalidDateRange(req.body?.dateRange)) {
 			return res.status(400).json({ error: "DateRangeModel requires rangeStart and rangeEnd" });
 		}
-		res.json(paged([{ key: 1, person: { key: 10, name: "Jane Smith" }, project: { key: Number(req.params.id), name: "Test Project Alpha", code: "PRJ-001" }, beginDate: "2026-01-01", endDate: "2026-12-31" }]));
+		const projectId = Number(req.params.id);
+		const posted = assignmentPosts.filter((entry) => entry.projectKey === projectId);
+		const base = [{ key: 1, person: { key: 10, name: "Jane Smith" }, project: { key: projectId, name: "Test Project Alpha", code: "PRJ-001" }, beginDate: "2026-01-01", endDate: "2026-12-31" }];
+		const created = posted.map((entry) => ({ key: entry.key, person: { key: entry.personKey, name: `Person ${entry.personKey}` }, project: { key: projectId, name: "Test Project Alpha", code: "PRJ-001" }, task: entry.taskKey ? { key: entry.taskKey } : null }));
+		const personKeys: number[] | undefined = req.body?.personKeys;
+		const taskKeys: number[] | undefined = req.body?.taskKeys;
+		const items = [...base, ...created]
+			.filter((item) => !personKeys || personKeys.includes(item.person.key))
+			.filter((item) => !taskKeys || (item as any).task?.key !== undefined && taskKeys.includes((item as any).task.key));
+		res.json(paged(items));
+	});
+	// Staffing: defaults and create. Person 97 is rejected with a 400; every call is recorded.
+	app.get("/platform/rest/assigning/defaults/project/:id/person/:personId/:date", (_req, res) =>
+		res.json({
+			billRateSource: "LABOR_CATEGORY",
+			costRateSource: "PERSON",
+			personCostRate: 77.5,
+			personBillRate: 150,
+			laborCategory: { key: 384, name: "Software Engineer" },
+			personOrg: { key: 1, name: "Delivery", code: "DEL" },
+			projectOrg: { key: 2, name: "Customer", code: "CUS" },
+		}),
+	);
+	app.post("/platform/rest/projects/:id/people-assignments", (req, res) => {
+		if (req.body?.personKey === 97) {
+			return res.status(400).json({ errors: [{ code: "VALIDATION_GENERIC", description: "SUPPORT-ONLY text" }] });
+		}
+		// 96: connection dropped (outcome unknown); 95: 503; 94: 403.
+		if (req.body?.personKey === 96) {
+			req.socket.destroy();
+			return;
+		}
+		if (req.body?.personKey === 95) {
+			return res.status(503).json({ error: "Service unavailable" });
+		}
+		if (req.body?.personKey === 94) {
+			return res.status(403).json({ errors: [{ code: "FORBIDDEN_INSUFFICIENT_ROLE" }] });
+		}
+		const entry = { key: 5000 + assignmentPosts.length, ...req.body };
+		assignmentPosts.push(entry);
+		res.json({ key: entry.key });
+	});
+	app.get("/platform/rest/__test/assignment-posts", (_req, res) => res.json({ posts: assignmentPosts }));
+	app.post("/platform/rest/__test/reset-assignment-posts", (_req, res) => {
+		assignmentPosts.length = 0;
+		res.json({ ok: true });
 	});
 	app.get("/platform/rest/projects/:id/notes", (req, res) =>
 		res.json(

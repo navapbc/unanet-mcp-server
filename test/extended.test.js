@@ -1006,7 +1006,8 @@ describe("Extended Unanet MCP tools", () => {
 			expect(names).toContain("unanet_create_timesheet");
 			expect(names).not.toContain("unanet_api_write");
 			expect(new Set(names).size).toBe(names.length);
-			expect(names.length).toBe(93);
+			expect(names.length).toBe(94);
+			expect(names).toContain("unanet_assign_people_to_project");
 		});
 	});
 });
