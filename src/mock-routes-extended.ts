@@ -13,6 +13,7 @@ export interface MockState {
 }
 
 const assignmentPosts: any[] = [];
+const defaultsRequests: Array<{ projectId: number; personId: number; date: string }> = [];
 
 const oversizedName = (id: number) =>
 	id === 998 ? "x".repeat(250_000) : id === 997 ? "x".repeat(199_800) : "New Jersey Department of Labor";
@@ -389,6 +390,32 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 			person(14, "Gone", "Person", "gone@example.com", false),
 			person(97, "Rejected", "Person", "rejected@example.com"),
 		];
+		// Paged fixtures for email lookups. The loose substring match is paged like the
+		// real search: "many" has its one exact match on page 2, "span" has exact
+		// duplicates on pages 1 and 2, "endless" never ends.
+		const local = email.split("@")[0];
+		const paging = (rows: any[], total = rows.length, pageCount = Math.max(1, Math.ceil(total / pageSize))) => ({
+			items: rows, page, pageSize, pageCount, resultCount: total,
+		});
+		const page = Number(req.query.page ?? 1);
+		const pageSize = Number(req.query.pageSize ?? 100);
+		const bulk = (exact: Record<number, [number, string]>) =>
+			Array.from({ length: 120 }, (_, i) =>
+				exact[i] ? person(exact[i][0], "Bulk", String(i), exact[i][1]) : person(1000 + i, "Bulk", String(i), `${local}${i}@example.com`),
+			);
+		if (local === "many") {
+			const rows = bulk({ 110: [200, "many@example.com"] });
+			return res.json(paging(rows.slice((page - 1) * pageSize, page * pageSize), rows.length));
+		}
+		if (local === "span") {
+			const rows = bulk({ 5: [300, "span@example.com"], 105: [301, "span@example.com"] });
+			return res.json(paging(rows.slice((page - 1) * pageSize, page * pageSize), rows.length));
+		}
+		if (local === "endless") {
+			const rows = Array.from({ length: pageSize }, (_, i) => person(5000 + page * 1000 + i, "End", String(i), `endless${page}x${i}@example.com`));
+			return res.json(paging(rows, 1_000_000, 10_000));
+		}
+		if (local === "malformed") return res.json({ message: "upstream unavailable" });
 		res.json(
 			paged(
 				people
@@ -396,7 +423,7 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 					// Like the real search this is loose: a substring match that ignores the
 					// active flag, so tests can prove the tool still demands an exact,
 					// active email.
-					.filter((p) => !email || p.email.includes(email.split("@")[0])),
+					.filter((p) => !email || p.email.includes(local)),
 			),
 		);
 	});
@@ -448,33 +475,61 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 			return res.status(400).json({ error: "DateRangeModel requires rangeStart and rangeEnd" });
 		}
 		const projectId = Number(req.params.id);
-		const posted = assignmentPosts.filter((entry) => entry.projectKey === projectId);
-		const base = [{ key: 1, person: { key: 10, name: "Jane Smith" }, project: { key: projectId, name: "Test Project Alpha", code: "PRJ-001" }, beginDate: "2026-01-01", endDate: "2026-12-31" }];
-		const created = posted.map((entry) => ({ key: entry.key, person: { key: entry.personKey, name: `Person ${entry.personKey}` }, project: { key: projectId, name: "Test Project Alpha", code: "PRJ-001" }, task: entry.taskKey ? { key: entry.taskKey } : null }));
 		const personKeys: number[] | undefined = req.body?.personKeys;
 		const taskKeys: number[] | undefined = req.body?.taskKeys;
+		// Person 89's lookup answers with a body that is not a list.
+		if (personKeys?.includes(89)) return res.json({ message: "upstream unavailable" });
+		const project = { key: projectId, name: "Test Project Alpha", code: "PRJ-001" };
+		const base = [
+			{ key: 1, person: { key: 10, name: "Jane Smith" }, project, beginDate: "2026-01-01", endDate: "2026-12-31", task: null as any },
+			// A future-dated assignment: only the date overlap rule finds it.
+			{ key: 2, person: { key: 86, name: "Future Person" }, project, beginDate: "2099-01-01", endDate: "2099-12-31", task: null as any },
+		];
+		// Created assignments without dates follow the project dates (always overlapping).
+		const created = assignmentPosts
+			.filter((entry) => entry.projectKey === projectId)
+			.map((entry) => ({
+				key: entry.key,
+				person: { key: entry.personKey, name: `Person ${entry.personKey}` },
+				project,
+				beginDate: entry.beginDate ?? "2000-01-01",
+				endDate: entry.endDate ?? "2099-12-31",
+				task: entry.taskKey ? { key: entry.taskKey } : null,
+			}));
+		const range = req.body?.dateRange;
 		const items = [...base, ...created]
 			.filter((item) => !personKeys || personKeys.includes(item.person.key))
-			.filter((item) => !taskKeys || (item as any).task?.key !== undefined && taskKeys.includes((item as any).task.key));
+			.filter((item) => !taskKeys || (item.task?.key !== undefined && taskKeys.includes(item.task.key)))
+			.filter((item) => !range || (item.beginDate <= range.rangeEnd && item.endDate >= range.rangeStart));
 		res.json(paged(items));
 	});
-	// Staffing: defaults and create. Person 97 is rejected with a 400; every call is recorded.
-	app.get("/platform/rest/assigning/defaults/project/:id/person/:personId/:date", (_req, res) =>
-		res.json({
+	// Staffing: defaults and create. Every call is recorded. Defaults for 93 is {}, 92 has an
+	// unknown rate source, 91 lacks the project organization, 90 is null.
+	app.get("/platform/rest/assigning/defaults/project/:id/person/:personId/:date", (req, res) => {
+		const personId = Number(req.params.personId);
+		defaultsRequests.push({ projectId: Number(req.params.id), personId, date: req.params.date });
+		const full = {
 			billRateSource: "LABOR_CATEGORY",
-			costRateSource: "PERSON",
+			costRateSource: "LABOR_CATEGORY",
 			personCostRate: 77.5,
 			personBillRate: 150,
 			laborCategory: { key: 384, name: "Software Engineer" },
 			personOrg: { key: 1, name: "Delivery", code: "DEL" },
 			projectOrg: { key: 2, name: "Customer", code: "CUS" },
-		}),
-	);
+		};
+		if (personId === 93) return res.json({});
+		if (personId === 85) return res.json({ ...full, costRateSource: "BOGUS" });
+		if (personId === 84) return res.json({ ...full, personOrg: undefined });
+		if (personId === 92) return res.json({ ...full, billRateSource: "BOGUS" });
+		if (personId === 91) return res.json({ ...full, projectOrg: undefined });
+		if (personId === 90) return res.type("json").send("null");
+		res.json(full);
+	});
 	app.post("/platform/rest/projects/:id/people-assignments", (req, res) => {
 		if (req.body?.personKey === 97) {
 			return res.status(400).json({ errors: [{ code: "VALIDATION_GENERIC", description: "SUPPORT-ONLY text" }] });
 		}
-		// 96: connection dropped (outcome unknown); 95: 503; 94: 403.
+		// 96: connection dropped (outcome unknown); 95: 503; 94: 403; 88: 401; 87: 429.
 		if (req.body?.personKey === 96) {
 			req.socket.destroy();
 			return;
@@ -485,13 +540,20 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		if (req.body?.personKey === 94) {
 			return res.status(403).json({ errors: [{ code: "FORBIDDEN_INSUFFICIENT_ROLE" }] });
 		}
+		if (req.body?.personKey === 88) {
+			return res.status(401).json({ errors: [{ code: "UNAUTHORIZED" }] });
+		}
+		if (req.body?.personKey === 87) {
+			return res.status(429).json({ errors: [{ code: "RATE_LIMITED" }] });
+		}
 		const entry = { key: 5000 + assignmentPosts.length, ...req.body };
 		assignmentPosts.push(entry);
 		res.json({ key: entry.key });
 	});
-	app.get("/platform/rest/__test/assignment-posts", (_req, res) => res.json({ posts: assignmentPosts }));
+	app.get("/platform/rest/__test/assignment-posts", (_req, res) => res.json({ posts: assignmentPosts, defaults: defaultsRequests }));
 	app.post("/platform/rest/__test/reset-assignment-posts", (_req, res) => {
 		assignmentPosts.length = 0;
+		defaultsRequests.length = 0;
 		res.json({ ok: true });
 	});
 	app.get("/platform/rest/projects/:id/notes", (req, res) =>
