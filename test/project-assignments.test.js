@@ -132,6 +132,9 @@ describe("unanet_assign_people_to_project", () => {
 			const endless = await run({ emails: ["endless@example.com"] });
 			expect(endless.results[0]).toMatchObject({ personKey: null, status: "failed" });
 			expect(endless.results[0].error).toContain("Too many search results");
+			// Exact duplicates seen before the search gives up are ambiguous, not just "too many".
+			const dup = await run({ emails: ["endlessdup@example.com"] });
+			expect(dup.results[0]).toMatchObject({ status: "ambiguous", candidates: [400, 401] });
 			const malformed = await run({ emails: ["malformed@example.com"] });
 			expect(malformed.success).toBe(false);
 			expect(malformed.error).toContain("Unexpected response shape");
@@ -150,7 +153,7 @@ describe("unanet_assign_people_to_project", () => {
 			projectKey: 101,
 			personKey: 11,
 			billRateSource: "LABOR_CATEGORY",
-			costRateSource: "LABOR_CATEGORY",
+			costRateSource: "PERSON",
 			personOrganizationKey: 1,
 			projectOrganizationKey: 2,
 			laborCategoryKey: 384,
@@ -205,6 +208,16 @@ describe("unanet_assign_people_to_project", () => {
 		// An explicit end date bounds the lookup: 86 starts in 2099, after this period.
 		expect(statuses(await run({ personKeys: [86], ...OUTSIDE }))).toEqual([[86, "assigned"]]);
 		expect(await posts()).toHaveLength(2);
+	});
+
+	it("with no dates a fully past assignment still counts; a later start date makes it new", async () => {
+		expect(statuses(await run({ personKeys: [83] }))).toEqual([[83, "alreadyAssigned"]]);
+		expect(statuses(await run({ personKeys: [83], beginDate: "2027-01-01" }))).toEqual([[83, "assigned"]]);
+	});
+
+	it("reads Unanet's defaults even when the body is wrapped in a message", async () => {
+		expect(statuses(await run({ personKeys: [82] }))).toEqual([[82, "assigned"]]);
+		expect((await posts())[0]).toMatchObject({ billRateSource: "LABOR_CATEGORY", costRateSource: "PERSON", projectOrganizationKey: 2 });
 	});
 
 	it("with only a start date, looks from that date onward and sends only that date", async () => {

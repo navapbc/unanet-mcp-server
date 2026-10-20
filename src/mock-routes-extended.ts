@@ -411,8 +411,13 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 			const rows = bulk({ 5: [300, "span@example.com"], 105: [301, "span@example.com"] });
 			return res.json(paging(rows.slice((page - 1) * pageSize, page * pageSize), rows.length));
 		}
-		if (local === "endless") {
-			const rows = Array.from({ length: pageSize }, (_, i) => person(5000 + page * 1000 + i, "End", String(i), `endless${page}x${i}@example.com`));
+		if (local === "endless" || local === "endlessdup") {
+			const rows = Array.from({ length: pageSize }, (_, i) => person(5000 + page * 1000 + i, "End", String(i), `${local}${page}x${i}@example.com`));
+			// "endlessdup" shows two exact matches on the first page of a search that never ends.
+			if (local === "endlessdup" && page === 1) {
+				rows[3] = person(400, "End", "A", "endlessdup@example.com");
+				rows[4] = person(401, "End", "B", "endlessdup@example.com");
+			}
 			return res.json(paging(rows, 1_000_000, 10_000));
 		}
 		if (local === "malformed") return res.json({ message: "upstream unavailable" });
@@ -484,6 +489,8 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 			{ key: 1, person: { key: 10, name: "Jane Smith" }, project, beginDate: "2026-01-01", endDate: "2026-12-31", task: null as any },
 			// A future-dated assignment: only the date overlap rule finds it.
 			{ key: 2, person: { key: 86, name: "Future Person" }, project, beginDate: "2099-01-01", endDate: "2099-12-31", task: null as any },
+			// A fully past assignment: found only when the lookup reaches back before today.
+			{ key: 3, person: { key: 83, name: "Past Person" }, project, beginDate: "2020-01-01", endDate: "2020-12-31", task: null as any },
 		];
 		// Created assignments without dates follow the project dates (always overlapping).
 		const created = assignmentPosts
@@ -510,13 +517,14 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		defaultsRequests.push({ projectId: Number(req.params.id), personId, date: req.params.date });
 		const full = {
 			billRateSource: "LABOR_CATEGORY",
-			costRateSource: "LABOR_CATEGORY",
+			costRateSource: "PERSON",
 			personCostRate: 77.5,
 			personBillRate: 150,
 			laborCategory: { key: 384, name: "Software Engineer" },
 			personOrg: { key: 1, name: "Delivery", code: "DEL" },
 			projectOrg: { key: 2, name: "Customer", code: "CUS" },
 		};
+		if (personId === 82) return res.json({ message: full });
 		if (personId === 93) return res.json({});
 		if (personId === 85) return res.json({ ...full, costRateSource: "BOGUS" });
 		if (personId === 84) return res.json({ ...full, personOrg: undefined });

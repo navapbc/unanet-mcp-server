@@ -1,6 +1,6 @@
 // Project staffing write: assign people to a Unanet project. This is an
-// org-level change (Unanet requires the resource assigner or administrator
-// role to create assignments), unlike the /me/ self-service writes, so it
+// org-level change (Unanet requires the resource assigner, administrator or
+// PR administrator role to create assignments), unlike the /me/ self-service writes, so it
 // lives in its own file with its own guards: a person cap, a duplicate check
 // at preflight, silent by default, validated Unanet defaults, and a dry run.
 
