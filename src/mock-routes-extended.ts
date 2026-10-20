@@ -525,6 +525,9 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 			projectOrg: { key: 2, name: "Customer", code: "CUS" },
 		};
 		if (personId === 82) return res.json({ message: full });
+		// Other valid configurations, so no source can be hardcoded in the tool.
+		if (personId === 81) return res.json({ ...full, billRateSource: "PERSON", costRateSource: "LABOR_CATEGORY" });
+		if (personId === 80) return res.json({ ...full, billRateSource: "OVERRIDE", costRateSource: "OVERRIDE" });
 		if (personId === 93) return res.json({});
 		if (personId === 85) return res.json({ ...full, costRateSource: "BOGUS" });
 		if (personId === 84) return res.json({ ...full, personOrg: undefined });

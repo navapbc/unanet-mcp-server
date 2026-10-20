@@ -220,6 +220,15 @@ describe("unanet_assign_people_to_project", () => {
 		expect((await posts())[0]).toMatchObject({ billRateSource: "LABOR_CATEGORY", costRateSource: "PERSON", projectOrganizationKey: 2 });
 	});
 
+	it("forwards each person's own rate sources, whichever valid combination Unanet reports", async () => {
+		// 81: bill PERSON / cost LABOR_CATEGORY; 80: both OVERRIDE (sent without any rate).
+		expect(statuses(await run({ personKeys: [81, 80] }))).toEqual([[81, "assigned"], [80, "assigned"]]);
+		const made = await posts();
+		expect(made[0]).toMatchObject({ personKey: 81, billRateSource: "PERSON", costRateSource: "LABOR_CATEGORY" });
+		expect(made[1]).toMatchObject({ personKey: 80, billRateSource: "OVERRIDE", costRateSource: "OVERRIDE" });
+		expect(JSON.stringify(made)).not.toMatch(/77\.5|150|billRate"|costRate"/);
+	});
+
 	it("with only a start date, looks from that date onward and sends only that date", async () => {
 		const result = await run({ personKeys: [10, 86], beginDate: "2027-02-01" });
 		expect(statuses(result)).toEqual([[10, "assigned"], [86, "alreadyAssigned"]]);
