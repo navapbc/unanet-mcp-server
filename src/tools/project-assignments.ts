@@ -26,7 +26,8 @@ const MAX_SEARCH_PAGES = 5;
 // not known here: an existing assignment in any period then counts.
 const LOOKUP_START = "1900-01-01";
 const LOOKUP_END = "2099-12-31";
-const RATE_SOURCES = new Set(["PERSON", "LABOR_CATEGORY", "OVERRIDE"]);
+// An OVERRIDE needs explicit amounts/currency that this tool does not accept.
+const RATE_SOURCES: Record<string, true> = { PERSON: true, LABOR_CATEGORY: true };
 
 type PersonResult = {
 	personKey: number | null;
@@ -72,9 +73,11 @@ async function findPeopleByEmail(client: UnanetClient, email: string) {
 		const rows = listFrom(response.data);
 		if (rows === null) throw new Error("Unexpected response shape from the people search; nothing was assigned.");
 		for (const person of rows) {
-			if (String(person?.email ?? "").trim().toLowerCase() === email.toLowerCase() && person?.active !== false) {
-				matches.set(person.key, person);
+			if (String(person?.email ?? "").trim().toLowerCase() !== email.toLowerCase()) continue;
+			if (typeof person.active !== "boolean" || !Number.isInteger(person.key) || person.key <= 0) {
+				throw new Error("Unexpected person identity or activity in the people search; this email was not resolved.");
 			}
+			if (person.active === true) matches.set(person.key, person);
 		}
 		const pageCount = pageCountOf(response.data);
 		const last = pageCount !== null ? page >= pageCount : rows.length < SEARCH_PAGE_SIZE;
@@ -86,7 +89,7 @@ async function findPeopleByEmail(client: UnanetClient, email: string) {
 export const assignPeopleToProjectTool = {
 	name: "unanet_assign_people_to_project",
 	description:
-		"Assign people to a Unanet project (optionally a task), for example to add everyone in a channel to its bid code. Identify people by Unanet person key or by work email (exactly one active match is required; looking people up by email needs a Unanet role that can search people, otherwise pass personKeys). Skips people who already have an assignment overlapping the period, found at preflight; this is a check before creating, not a lock. With no dates, a person with an assignment in any period is skipped (pass beginDate and endDate to add someone for a new period). Uses each person's Unanet defaults for rates, labor category and organizations (and refuses a person whose defaults cannot be read), sends no assignment notifications unless notify=true, and handles at most 50 people per call. dryRun=true previews who would be assigned without changing anything; it does not reserve anything or prove the create will be allowed. This changes project staffing in Unanet: Unanet requires the resource assigner, administrator or PR administrator role (and the resource assignment license for the defaults lookup) and decides whether you have it. Requires confirm: true.",
+		"Assign people to a Unanet project (optionally a task), for example to add everyone in a channel to its bid code. Identify people by Unanet person key or by work email (exactly one active match with a valid person key is required; malformed matching records are refused; email lookup needs a Unanet role that can search people, otherwise pass personKeys). Skips people who already have an assignment overlapping the period, found at preflight; this is a check before creating, not a lock. With no dates, a person with an assignment in any period is skipped (pass beginDate and endDate to add someone for a new period). Uses Unanet's PERSON or LABOR_CATEGORY rate sources, labor category and organizations; refuses missing or unusable defaults and OVERRIDE sources because no override amounts or currency are supplied. Sends no assignment notifications unless notify=true, and handles at most 50 people per call. dryRun=true previews without changing anything or checking assignment defaults; it does not reserve anything or prove the create will be allowed. Rejected email lookups are reported per email; authentication, permission, rate-limit or unanswered requests halt queued people as notAttempted. This changes project staffing in Unanet: Unanet requires the resource assigner, administrator or PR administrator role (and the resource assignment license for the defaults lookup) and decides whether you have it. Requires confirm: true.",
 	inputSchema: z
 		.object({
 			confirm: confirmSchema("project assignment"),
@@ -123,6 +126,7 @@ export const assignPeopleToProjectTool = {
 			const results: PersonResult[] = [];
 			const toAssign: Array<{ personKey: number; email?: string }> = [];
 			const seen = new Set<number>();
+			let halted = false;
 
 			// 1. Resolve every requested person before changing anything.
 			for (const personKey of args.personKeys ?? []) {
@@ -131,16 +135,26 @@ export const assignPeopleToProjectTool = {
 				toAssign.push({ personKey });
 			}
 			for (const email of args.emails ?? []) {
-				const { matches, complete } = await findPeopleByEmail(client, email);
-				if (matches.length > 1) {
-					results.push({ personKey: null, email, status: "ambiguous", candidates: matches.map((person) => person.key), error: "More than one active person has this email; use personKeys." });
-				} else if (!complete) {
-					results.push({ personKey: null, email, status: "failed", error: `Too many search results to decide this email (more than ${MAX_SEARCH_PAGES * SEARCH_PAGE_SIZE}); use personKeys.` });
-				} else if (matches.length === 0) {
-					results.push({ personKey: null, email, status: "notFound", error: "No active Unanet person has this email." });
-				} else if (!seen.has(matches[0].key)) {
-					seen.add(matches[0].key);
-					toAssign.push({ personKey: matches[0].key, email });
+				if (halted) {
+					results.push({ personKey: null, email, status: "notAttempted" });
+					continue;
+				}
+				try {
+					const { matches, complete } = await findPeopleByEmail(client, email);
+					if (matches.length > 1) {
+						results.push({ personKey: null, email, status: "ambiguous", candidates: matches.map((person) => person.key), error: "More than one active person has this email; use personKeys." });
+					} else if (!complete) {
+						results.push({ personKey: null, email, status: "failed", error: `Too many search results to decide this email (more than ${MAX_SEARCH_PAGES * SEARCH_PAGE_SIZE}); use personKeys.` });
+					} else if (matches.length === 0) {
+						results.push({ personKey: null, email, status: "notFound", error: "No active Unanet person has this email." });
+					} else if (!seen.has(matches[0].key)) {
+						seen.add(matches[0].key);
+						toAssign.push({ personKey: matches[0].key, email });
+					}
+				} catch (error: unknown) {
+					results.push({ personKey: null, email, status: "failed", error: error instanceof Error ? error.message : String(error) });
+					const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
+					if (typeof status !== "number" || [401, 403, 429].includes(status)) halted = true;
 				}
 			}
 
@@ -151,7 +165,6 @@ export const assignPeopleToProjectTool = {
 			const defaultsDate = args.beginDate ?? today;
 			const rangeStart = args.beginDate ?? LOOKUP_START;
 			const rangeEnd = args.endDate ?? LOOKUP_END;
-			let halted = false;
 			for (const { personKey, email } of toAssign) {
 				if (halted) {
 					results.push({ personKey, email, status: "notAttempted" });
@@ -190,8 +203,10 @@ export const assignPeopleToProjectTool = {
 					const personOrg = defaults?.personOrg?.key;
 					const projectOrg = defaults?.projectOrg?.key;
 					if (
-						!RATE_SOURCES.has(defaults?.billRateSource) ||
-						!RATE_SOURCES.has(defaults?.costRateSource) ||
+						typeof defaults?.billRateSource !== "string" ||
+						typeof defaults?.costRateSource !== "string" ||
+						RATE_SOURCES[defaults?.billRateSource] !== true ||
+						RATE_SOURCES[defaults?.costRateSource] !== true ||
 						!Number.isInteger(personOrg) ||
 						!Number.isInteger(projectOrg)
 					) {

@@ -82,6 +82,17 @@ describe("unanet_assign_people_to_project", () => {
 		expect(() => tool.inputSchema.parse({ ...base, confirm: true, endDate: "2026-05-02" })).not.toThrow();
 	});
 
+	it.each([
+		{ projectId: 0 }, { projectId: 1.5 },
+		{ personKeys: [0] }, { personKeys: [1.5] },
+		{ taskKey: 0 }, { taskKey: 1.5 },
+		{ emails: ["not-an-email"] },
+		{ beginDate: "2026-02-30" }, { endDate: "2026-02-30" },
+		{ notify: "false" }, { dryRun: "false" },
+	])("rejects invalid input boundaries: %j", (input) => {
+		expect(tool.inputSchema.safeParse({ confirm: true, projectId: 101, personKeys: [11], ...input }).success).toBe(false);
+	});
+
 	it("refuses a handler call without confirm before any request", async () => {
 		const result = await tool.handler({ projectId: 101, personKeys: [11] }, auth);
 		expect(result.success).toBe(false);
@@ -120,6 +131,12 @@ describe("unanet_assign_people_to_project", () => {
 			expect(statuses(result)).toEqual([[200, "wouldAssign"]]);
 		});
 
+		it("normalizes upstream email whitespace without accepting a full-address substring", async () => {
+			const result = await run({ emails: ["suffix@example.com", "padded@example.com"] });
+			expect(statuses(result)).toEqual([[null, "notFound"], [11, "assigned"]]);
+			expect((await posts()).map((entry) => entry.personKey)).toEqual([11]);
+		});
+
 		it("reports exact duplicates that sit on different pages as ambiguous", async () => {
 			const result = await run({ emails: ["span@example.com"] });
 			expect(result.results).toEqual([
@@ -137,9 +154,43 @@ describe("unanet_assign_people_to_project", () => {
 			expect(dup.results[0]).toMatchObject({ status: "ambiguous", candidates: [400, 401] });
 			const malformed = await run({ emails: ["malformed@example.com"] });
 			expect(malformed.success).toBe(false);
-			expect(malformed.error).toContain("Unexpected response shape");
+			expect(malformed.results[0]).toMatchObject({ personKey: null, status: "failed" });
 			expect(await posts()).toEqual([]);
 		});
+
+		it.each(["missingactive", "nullactive", "stringactive", "missingkey", "nullkey", "zerokey", "negativekey", "fractionkey"])(
+			"refuses mixed valid and malformed exact matches: %s",
+			async (local) => {
+				const result = await run({ emails: [`${local}@example.com`] });
+				expect(result.success).toBe(false);
+				expect(statuses(result)).toEqual([[null, "failed"]]);
+				expect(await recorded()).toEqual({ posts: [], defaults: [] });
+			},
+		);
+
+		it.each(["search400", "search404", "search503", "pageerror"])(
+			"retains outcomes and continues valid people after %s",
+			async (local) => {
+				const result = await run({ personKeys: [81], emails: ["nobody@example.com", `${local}@example.com`, "sam@example.com"] });
+				expect(statuses(result)).toEqual([[null, "notFound"], [null, "failed"], [81, "assigned"], [11, "assigned"]]);
+				expect(result.success).toBe(false);
+				expect(result.summary).toMatchObject({ requested: 4, assigned: 2, failed: 1, notFound: 1 });
+				expect(result.outcome).toBeUndefined();
+				expect((await posts()).map((entry) => entry.personKey)).toEqual([81, 11]);
+			},
+		);
+
+		it.each(["search401", "search403", "search429", "searchdrop"])(
+			"halts all queued and unresolved people after %s",
+			async (local) => {
+				const result = await run({ personKeys: [81], emails: ["sam@example.com", `${local}@example.com`, "jane@example.com"] });
+				expect(statuses(result)).toEqual([[null, "failed"], [null, "notAttempted"], [81, "notAttempted"], [11, "notAttempted"]]);
+				expect(result.results[1].email).toBe("jane@example.com");
+				expect(result.summary).toMatchObject({ requested: 4, failed: 1, notAttempted: 3, unknown: 0 });
+				expect(result.outcome).toBeUndefined();
+				expect(await recorded()).toEqual({ posts: [], defaults: [] });
+			},
+		);
 	});
 
 	it("assigns with the person's Unanet defaults, silently, and never twice", async () => {
@@ -220,13 +271,20 @@ describe("unanet_assign_people_to_project", () => {
 		expect((await posts())[0]).toMatchObject({ billRateSource: "LABOR_CATEGORY", costRateSource: "PERSON", projectOrganizationKey: 2 });
 	});
 
-	it("forwards each person's own rate sources, whichever valid combination Unanet reports", async () => {
-		// 81: bill PERSON / cost LABOR_CATEGORY; 80: both OVERRIDE (sent without any rate).
-		expect(statuses(await run({ personKeys: [81, 80] }))).toEqual([[81, "assigned"], [80, "assigned"]]);
+	it("refuses either override source without blocking a later supported assignment", async () => {
+		const result = await run({ personKeys: [79, 78, 80, 81] });
+		expect(statuses(result)).toEqual([[79, "failed"], [78, "failed"], [80, "failed"], [81, "assigned"]]);
+		expect(result.success).toBe(false);
+		expect(result.summary).toMatchObject({ assigned: 1, failed: 3 });
 		const made = await posts();
-		expect(made[0]).toMatchObject({ personKey: 81, billRateSource: "PERSON", costRateSource: "LABOR_CATEGORY" });
-		expect(made[1]).toMatchObject({ personKey: 80, billRateSource: "OVERRIDE", costRateSource: "OVERRIDE" });
+		expect(made.map((entry) => entry.personKey)).toEqual([81]);
 		expect(JSON.stringify(made)).not.toMatch(/77\.5|150|billRate"|costRate"/);
+	});
+
+	it("refuses array rate sources instead of coercing them to supported enum strings", async () => {
+		const result = await run({ personKeys: [77, 76, 81] });
+		expect(statuses(result)).toEqual([[77, "failed"], [76, "failed"], [81, "assigned"]]);
+		expect((await posts()).map((entry) => entry.personKey)).toEqual([81]);
 	});
 
 	it("with only a start date, looks from that date onward and sends only that date", async () => {

@@ -399,6 +399,34 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 		});
 		const page = Number(req.query.page ?? 1);
 		const pageSize = Number(req.query.pageSize ?? 100);
+		if (local === "padded") return res.json(paging([person(11, "Padded", "Email", " Padded@Example.com ")]));
+		if (local === "suffix") return res.json(paging([person(12, "Suffix", "Email", "suffix@example.com.evil")]));
+		const searchError = /^search(400|401|403|404|429|503)$/.exec(local);
+		if (searchError) return res.status(Number(searchError[1])).json({ errors: [{ code: "SEARCH_REJECTED" }] });
+		if (local === "searchdrop") {
+			req.socket.destroy();
+			return;
+		}
+		const invalidPersonFields: Record<string, Record<string, unknown>> = {
+			missingactive: { active: undefined },
+			nullactive: { active: null },
+			stringactive: { active: "false" },
+			missingkey: { key: undefined },
+			nullkey: { key: null },
+			zerokey: { key: 0 },
+			negativekey: { key: -1 },
+			fractionkey: { key: 1.5 },
+		};
+		if (Object.prototype.hasOwnProperty.call(invalidPersonFields, local)) {
+			return res.json(paging([
+				person(11, "Valid", "Match", email),
+				{ ...person(12, "Malformed", "Match", email), ...invalidPersonFields[local] },
+			]));
+		}
+		if (local === "pageerror") {
+			if (page === 2) return res.status(400).json({ errors: [{ code: "SEARCH_REJECTED" }] });
+			return res.json(paging([person(11, "Partial", "Match", email)], 101, 2));
+		}
 		const bulk = (exact: Record<number, [number, string]>) =>
 			Array.from({ length: 120 }, (_, i) =>
 				exact[i] ? person(exact[i][0], "Bulk", String(i), exact[i][1]) : person(1000 + i, "Bulk", String(i), `${local}${i}@example.com`),
@@ -525,9 +553,13 @@ export function registerExtendedMockRoutes(app: Express, state: MockState): void
 			projectOrg: { key: 2, name: "Customer", code: "CUS" },
 		};
 		if (personId === 82) return res.json({ message: full });
-		// Other valid configurations, so no source can be hardcoded in the tool.
+		// A valid alternative, plus unsupported override configurations.
 		if (personId === 81) return res.json({ ...full, billRateSource: "PERSON", costRateSource: "LABOR_CATEGORY" });
 		if (personId === 80) return res.json({ ...full, billRateSource: "OVERRIDE", costRateSource: "OVERRIDE" });
+		if (personId === 79) return res.json({ ...full, billRateSource: "OVERRIDE" });
+		if (personId === 78) return res.json({ ...full, costRateSource: "OVERRIDE" });
+		if (personId === 77) return res.json({ ...full, billRateSource: ["PERSON"] });
+		if (personId === 76) return res.json({ ...full, costRateSource: ["LABOR_CATEGORY"] });
 		if (personId === 93) return res.json({});
 		if (personId === 85) return res.json({ ...full, costRateSource: "BOGUS" });
 		if (personId === 84) return res.json({ ...full, personOrg: undefined });
