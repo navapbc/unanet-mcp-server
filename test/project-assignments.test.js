@@ -145,25 +145,27 @@ describe("unanet_assign_people_to_project", () => {
 			expect(await posts()).toEqual([]);
 		});
 
-		it("refuses an email whose search never ends, and an unrecognised search response", async () => {
+		it("refuses an email whose search never ends", async () => {
 			const endless = await run({ emails: ["endless@example.com"] });
 			expect(endless.results[0]).toMatchObject({ personKey: null, status: "failed" });
 			expect(endless.results[0].error).toContain("Too many search results");
 			// Exact duplicates seen before the search gives up are ambiguous, not just "too many".
 			const dup = await run({ emails: ["endlessdup@example.com"] });
 			expect(dup.results[0]).toMatchObject({ status: "ambiguous", candidates: [400, 401] });
-			const malformed = await run({ emails: ["malformed@example.com"] });
-			expect(malformed.success).toBe(false);
-			expect(malformed.results[0]).toMatchObject({ personKey: null, status: "failed" });
 			expect(await posts()).toEqual([]);
 		});
 
-		it.each(["missingactive", "nullactive", "stringactive", "missingkey", "nullkey", "zerokey", "negativekey", "fractionkey"])(
-			"refuses mixed valid and malformed exact matches: %s",
+		it.each(["malformed", "missingactive", "nullactive", "stringactive", "missingkey", "nullkey", "zerokey", "negativekey", "fractionkey"])(
+			"halts queued and unresolved people after a malformed successful email search: %s",
 			async (local) => {
-				const result = await run({ emails: [`${local}@example.com`] });
+				const result = await run({ personKeys: [81], emails: ["sam@example.com", `${local}@example.com`, "many@example.com"] });
 				expect(result.success).toBe(false);
-				expect(statuses(result)).toEqual([[null, "failed"]]);
+				expect(statuses(result)).toEqual([[null, "failed"], [null, "notAttempted"], [81, "notAttempted"], [11, "notAttempted"]]);
+				expect(result.results[0].email).toBe(`${local}@example.com`);
+				expect(result.results[1].email).toBe("many@example.com");
+				expect(result.results[3].email).toBe("sam@example.com");
+				expect(result.summary).toMatchObject({ requested: 4, failed: 1, notAttempted: 3, assigned: 0, unknown: 0 });
+				expect(result.outcome).toBeUndefined();
 				expect(await recorded()).toEqual({ posts: [], defaults: [] });
 			},
 		);
