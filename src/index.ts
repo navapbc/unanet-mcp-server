@@ -130,6 +130,7 @@ import {
 	getReferenceDataTool,
 	pingTool,
 } from "./tools/directory.js";
+import { assignPeopleToProjectTool } from "./tools/project-assignments.js";
 import {
 	searchApiOperationsTool,
 	describeApiOperationTool,
@@ -320,6 +321,8 @@ const mutatingTools = [
 	updateMyAlternatesTool,
 	addMyAttachmentTool,
 	deleteMyAttachmentTool,
+	// Project staffing
+	assignPeopleToProjectTool,
 	// Org-level / legacy
 	updateProjectBudgetTool,
 	createContactTool,

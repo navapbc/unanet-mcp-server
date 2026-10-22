@@ -56,12 +56,13 @@ export const toolName = {
 }
 ```
 
-**Tool Categories** (93 tools at most, registered in three tiers in `src/index.ts`)
+**Tool Categories** (94 tools at most, registered in three tiers in `src/index.ts`)
 - `tools/leave.ts`, `tools/leave-requests.ts`: leave balances; leave request list/history/create/update/submit/cancel/delete
 - `tools/expenses.ts`, `tools/expense-lifecycle.ts`: expense report reads, draft/line/receipt writes, update/delete, history, meal caps, imported card transactions, gated submit
 - `tools/timesheet.ts`, `tools/timesheet-lifecycle.ts`: timeslip add/edit/delete/submit; time periods, list, history, adjustments, attachments, create/delete timesheet
 - `tools/approvals.ts`, `tools/reviews.ts`: approval/review queues addressed to the user (type × role matrix) and approve/disapprove/complete actions
 - `tools/user.ts`: My Projects list, rates, alternates, personal attachments
+- `tools/project-assignments.ts`: `unanet_assign_people_to_project` (write tier): org-level staffing write with a 50-person cap, paged exact email lookup with validated identity/activity, overlap check at preflight, validated Unanet defaults (no `OVERRIDE` rates), dry run, silent by default, per-email failure outcomes, and a halt on a login, 401/403/429 error, unanswered request, malformed successful people-search response or matching person record, or an unknown outcome. Malformed email searches stop all queued people (including direct keys and earlier resolved emails) before any assignment is attempted.
 - `tools/projects.ts`, `tools/directory.ts`: org-level reads — projects/tasks/assignments/notes/admins, people, organizations, contracts, invoices, reference lookups, ping
 - `tools/contacts.ts`, `tools/financials.ts`: legacy CRM/billing tools (some are fail-closed stubs)
 - `tools/api.ts`: spec-driven catalog (`unanet_api_search_operations`, `unanet_api_describe_operation`) and a read-only executor (`unanet_api_read`) backed by `spec/api-catalog.json`. There is no generic writer: writes need a dedicated tool. Operations that can return credentials, tokens, bank, payroll or configuration data are classified `sensitive` and refused.
