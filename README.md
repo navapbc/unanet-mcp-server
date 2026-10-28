@@ -1,4 +1,4 @@
-# Unanet MCP Server for Claude Desktop
+# Unanet MCP Server (Claude Code and Claude Desktop)
 
 > [!WARNING]
 > **Writing to timesheets is turned off by default. If you decide to change
@@ -10,9 +10,74 @@
 > one-way and locks the timesheet. Never let an agent submit on your behalf
 > without your own final check.
 
-This fork lets Claude Desktop talk to Nava's Unanet GovCon instance through the Model Context Protocol (MCP). It has been substantially updated from the original API-key design to use Unanet Platform REST: username/password login, short-lived bearer tokens, and safe-by-default tool registration.
+This is a Model Context Protocol (MCP) server: a small local program that gives Claude Code, Claude Desktop (or any MCP client) a set of `unanet_*` tools for Nava's Unanet GovCon ERP. It signs in as you, with your normal Unanet username and password, and can only do what your Unanet account can already do. There is no API key, firm code or service account to request.
 
-The happy path is macOS + Claude Desktop.
+> [!IMPORTANT]
+> **For AI assistants installing or using this repository.** Installing means: build it, put the user's credentials in `.env` in this folder (the user types the password, never you), and register the server with their MCP client (`claude mcp add` for Claude Code, the config file for Claude Desktop). Work with Unanet happens only through the `unanet_*` tools. **Do not open the Unanet website in a browser**, to install, to test, or to get data: it is not a substitute for the connector. If the `unanet_*` tools are missing, or only `unanet_setup_status` is listed, run `npm run check-setup` in this folder and fix what it reports.
+
+## Install
+
+You need: macOS or Windows 10/11, [Node.js](https://nodejs.org/) 20 or newer, git (or the GitHub ZIP), access to this repository, your Unanet login, and Claude Code and/or Claude Desktop. You do **not** need an API key, a firm code, a service account or anyone's approval.
+
+### Quick install (Mac)
+
+```bash
+git clone https://github.com/navapbc/unanet-mcp-server.git
+cd unanet-mcp-server
+./setup-mac.sh
+```
+
+The script installs and builds the server, asks for your Unanet address (press Enter for `https://navapbc.unanet.biz`), username and password, and writes them to `.env` in this folder (mode 600, git-ignored). It then registers the server with Claude Desktop (if installed) and offers to register it with Claude Code (if the `claude` command exists), and finally signs in once to check the credentials.
+
+Windows: double-click `setup-windows.bat` and follow [README-WINDOWS.md](README-WINDOWS.md).
+
+### Check it
+
+```bash
+npm run check-setup
+```
+
+It prints `READY: signed in to https://navapbc.unanet.biz as <you>` when the credentials work, or `NOT READY:` with the exact problem (a wrong address, a missing username, a rejected password) and how to fix it. It never prints the password.
+
+Then start a **new** Claude Code session (or fully quit and reopen Claude Desktop) and ask *"What are my Unanet leave balances?"*. Compare the answer with Unanet yourself. Claude should call `unanet_get_my_leave_balances`; if it reaches for a browser instead, the connector is not registered or not running, see below.
+
+### Claude Code by hand
+
+After building (`npm install && npm run build`) and creating `.env` (copy `.env.example` and fill in your username and password):
+
+```bash
+claude mcp add --scope user unanet -- node "$PWD/dist/index.js"
+```
+
+Run it from this folder; `--scope user` makes the tools available in every project. In a new session, `/mcp` should list `unanet` as connected. The server finds `.env` next to its own code, so it works whatever folder Claude Code starts in. To remove it: `claude mcp remove --scope user unanet`.
+
+### Claude Desktop by hand
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_config.json`) and add:
+
+```json
+{
+  "mcpServers": {
+    "unanet": {
+      "command": "/bin/bash",
+      "args": ["-lc", "node /absolute/path/to/unanet-mcp-server/dist/index.js"]
+    }
+  }
+}
+```
+
+`bash -lc` lets Claude Desktop find `node` from your login shell. Fully quit and reopen Claude Desktop afterwards. Your password stays in `.env`; it is never written into a client's config.
+
+### Turning on more tools
+
+By default only your own records are readable. In `.env`, `UNANET_ENABLE_EXTENDED_READ_TOOLS=true` adds org-level reads (projects, people, organizations, contracts, invoices) and `UNANET_ENABLE_WRITE_TOOLS=true` adds writes. Restart the client after changing `.env`.
+
+### If the tools don't show up
+
+1. Run `npm run check-setup` and fix what it reports. The most common problems are a wrong `UNANET_BASE_URL` (it must be exactly `https://navapbc.unanet.biz`, with no path), a password containing `#` that is not wrapped in single quotes, and a missing build (`npm run build`).
+2. Claude Code: run `claude mcp list` and `/mcp`. If `unanet` is missing, run the `claude mcp add` command above. Claude Desktop: check Settings → Developer for the `unanet` server log.
+3. A server with a configuration problem still starts and offers one tool, `unanet_setup_status`, that explains the problem. If that is the only Unanet tool, fix `.env` and restart the client.
+4. A **403** means you signed in but your Unanet account lacks that permission; ask Finance, not IT.
 
 ## What works today
 
@@ -30,130 +95,6 @@ Example in Claude Desktop:
 
 ![Claude Desktop using the Unanet connector to check leave balances](assets/screenshots/claude-leave-balance-example.png)
 
-## Quick install for Mac users
-
-### 1. Install Node.js
-
-Install Node.js **20 or newer** from:
-
-```text
-https://nodejs.org/
-```
-
-Choose the current LTS installer for macOS.
-
-### 2. Download or clone this repo
-
-If you use Git:
-
-```bash
-git clone https://github.com/navapbc/unanet-mcp-server.git
-cd unanet-mcp-server
-```
-
-If you downloaded a ZIP, unzip it and open Terminal in the project folder.
-
-### 3. Run the Mac setup script
-
-```bash
-./setup-mac.sh
-```
-
-The script will:
-
-1. Check Node.js/npm.
-2. Install dependencies.
-3. Build the server.
-4. Create a local `.env` file if needed.
-5. Add this MCP server to Claude Desktop's config.
-
-Your password stays in the local `.env` file. It is not written into Claude Desktop's config.
-
-### 4. Restart Claude Desktop
-
-Fully quit and reopen Claude Desktop.
-
-Then ask Claude:
-
-```text
-Show my Unanet leave balances.
-```
-
-If Claude can use the tool, the install worked.
-
-## Manual Mac install
-
-Use this if you prefer to see each step.
-
-### 1. Build the server
-
-```bash
-cd /Users/YOU/path/to/unanet-mcp-server
-npm install
-npm run build
-```
-
-### 2. Create `.env`
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```env
-UNANET_BASE_URL=https://navapbc.unanet.biz
-UNANET_USERNAME=your-username
-UNANET_PASSWORD=your-password
-UNANET_APP_NAME=NavaUnanetMCP
-
-# Safe default: only self-service read tools are exposed.
-UNANET_ENABLE_EXTENDED_READ_TOOLS=false
-UNANET_ENABLE_WRITE_TOOLS=false
-```
-
-To expose org-level read tools and the generic API catalog/reader:
-
-```env
-UNANET_ENABLE_EXTENDED_READ_TOOLS=true
-```
-
-To expose write-capable tools:
-
-```env
-UNANET_ENABLE_WRITE_TOOLS=true
-```
-
-Only enable write tools when you intentionally want Claude to see them. Every write requires `confirm: true`; a few legacy CRM/budget stubs still fail closed because Platform REST has no matching endpoint.
-
-### 3. Add the server to Claude Desktop
-
-Edit:
-
-```text
-~/Library/Application Support/Claude/claude_desktop_config.json
-```
-
-Add or merge this entry:
-
-```json
-{
-  "mcpServers": {
-    "unanet": {
-      "command": "/bin/bash",
-      "args": [
-        "-lc",
-        "cd /absolute/path/to/unanet-mcp-server && node dist/index.js"
-      ]
-    }
-  }
-}
-```
-
-Why use `bash -lc`? The server loads `.env` from the project directory, so Claude needs to start it from that folder.
-
-Restart Claude Desktop after changing the config.
-
 ## Environment variables
 
 | Variable | Required | Default | Purpose |
@@ -167,6 +108,7 @@ Restart Claude Desktop after changing the config.
 | `UNANET_ALLOWED_BASE_URLS` | No | Nava tenant only | Comma-separated allow-list for additional production origins. |
 | `UNANET_ALLOW_INSECURE_LOCAL_MOCK` | No | `false` | Allows `http://localhost` / `127.0.0.1` for local mock testing only. |
 | `LOG_LEVEL` | No | `info` | Reserved for logging behavior. |
+| `UNANET_ENV_FILE` | No | `.env` in this folder | Read settings from another file. Values already set in the client's environment always win over the file. |
 
 Legacy `UNANET_API_KEY` and `UNANET_FIRM_CODE` are no longer needed for the Platform REST tools in this fork.
 
@@ -332,7 +274,8 @@ Security choices:
 ```bash
 npm install
 npm run build
-npm test                # builds, then runs test/basic.test.js + test/extended.test.js against the mock server
+npm test                # builds, then runs every test file in test/ against the mock server
+npm run check-setup     # signs in once with the .env credentials and reports READY / NOT READY (never prints the password)
 npm run mock-server     # local mock Unanet API (src/mock-server.ts + src/mock-routes-extended.ts)
 npm run fetch-spec      # refresh spec/unanet-openapi.json from the Unanet dev portal
 npm run build-catalog   # regenerate spec/api-catalog.json + spec/api-schemas.json from the spec (add -- --check to verify without writing)
@@ -345,7 +288,9 @@ Project layout:
 
 ```text
 src/
-├── index.ts                    # MCP server entry point; registers tools by tier
+├── index.ts                    # MCP server entry point; registers tools by tier (setup mode with unanet_setup_status when misconfigured)
+├── config.ts                   # Finds .env next to the code, validates settings, setup advice
+├── check-setup.ts              # `npm run check-setup`
 ├── auth.ts                     # Platform REST auth, base URL validation, token cache
 ├── mock-server.ts              # Local mock Unanet API for tests
 ├── mock-routes-extended.ts     # Mock routes for the extended surface
@@ -361,6 +306,7 @@ src/
 │   ├── user.ts                 # My Projects, rates, alternates, personal attachments
 │   ├── projects.ts             # Project search/detail/status
 │   ├── directory.ts            # People, organizations, contracts, tasks, assignments, invoices, reference data, ping
+│   ├── project-assignments.ts  # Assign people to a project (write tier)
 │   ├── contacts.ts             # Organization contact create, company info (legacy)
 │   ├── financials.ts           # Billing status, invoice-backed reports (legacy)
 │   └── api.ts                  # Spec-driven catalog / describe / read-only executor (no generic writer)
@@ -383,49 +329,13 @@ spec/
 
 ## Troubleshooting
 
-### Claude does not show the Unanet tools
+Start with `npm run check-setup`; it names the problem. More detail:
 
-1. Fully quit and reopen Claude Desktop.
-2. Confirm the server builds:
-
-   ```bash
-   npm run build
-   ```
-
-3. Confirm the Claude config points at the right folder:
-
-   ```text
-   ~/Library/Application Support/Claude/claude_desktop_config.json
-   ```
-
-4. Confirm `.env` exists in the project folder.
-
-### Authentication errors
-
-Check:
-
-- `UNANET_BASE_URL=https://navapbc.unanet.biz`
-- `UNANET_USERNAME` is set
-- `UNANET_PASSWORD` is set
-- You can log into Unanet normally with the same credentials
-
-### Base URL rejected
-
-The server intentionally rejects arbitrary production hosts. If you need another Unanet tenant, add it explicitly:
-
-```env
-UNANET_ALLOWED_BASE_URLS=https://other-tenant.unanet.biz
-```
-
-## Windows
-
-This fork is primarily used on macOS at Nava. A Windows helper script still exists:
-
-```text
-setup-windows.bat
-```
-
-It is best-effort and less exercised than the Mac setup path.
+- **Base URL rejected.** `UNANET_BASE_URL` must be exactly the address you use in the browser, `https://navapbc.unanet.biz`: https, no path, no trailing `/platform/rest`. The server rejects other hosts on purpose; to use another Unanet tenant add it to `UNANET_ALLOWED_BASE_URLS`.
+- **Authentication failed (401).** Sign in to the Unanet website with the same username and password. A password containing `#`, or starting or ending with a space, must be wrapped in single quotes in `.env` (backticks if it also contains a single quote).
+- **Access forbidden (403).** You signed in, but your Unanet account lacks the permission for that operation. That is a Unanet permission question for Finance, not a connector problem.
+- **No `unanet_*` tools in the client.** See [If the tools don't show up](#if-the-tools-dont-show-up). Claude Desktop logs are under Settings → Developer; for Claude Code use `claude mcp list` and `/mcp`.
+- **Windows.** The Windows script is best-effort and less exercised than the Mac path; see [README-WINDOWS.md](README-WINDOWS.md).
 
 ## License
 

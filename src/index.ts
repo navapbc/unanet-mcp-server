@@ -10,15 +10,11 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import dotenv from "dotenv";
 import {
-	DEFAULT_NAVA_UNANET_BASE_URL,
-	DEFAULT_UNANET_APP_NAME,
 	type UnanetAuth,
 	isEnabled,
-	validateAuth,
-	validateUnanetBaseUrl,
 } from "./auth.js";
+import { loadConfig, loadEnvFile, setupAdvice } from "./config.js";
 import {
 	getProjectsTool,
 	getProjectDetailsTool,
@@ -141,30 +137,15 @@ import {
 	timesheetTemplatesResource,
 } from "./resources/reports.js";
 
-// Load environment variables
-dotenv.config();
-
 // Server metadata
 const SERVER_NAME = "unanet-mcp-server";
 const SERVER_VERSION = "1.0.0";
 
-// Initialize server
-const server = new Server(
-	{
-		name: SERVER_NAME,
-		version: SERVER_VERSION,
-	},
-	{
-		capabilities: {
-			resources: {},
-			tools: {},
-		},
-	},
-);
+// Credentials come from the repository's .env (found next to the code, not in
+// the client's working directory) or from the client's environment.
+const envFile = loadEnvFile();
+const config = loadConfig();
 
-const allowInsecureLocalMock = isEnabled(
-	process.env.UNANET_ALLOW_INSECURE_LOCAL_MOCK,
-);
 // Extended (org-level) reads: projects, people, organizations, contracts,
 // invoices, reference data and the spec-driven API reader. Opt-in only.
 const enableExtendedReadTools = isEnabled(
@@ -181,35 +162,53 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-function loadAuthFromEnv(): UnanetAuth {
-	const normalizedBaseUrl = validateUnanetBaseUrl(
-		process.env.UNANET_BASE_URL || DEFAULT_NAVA_UNANET_BASE_URL,
-		{ allowInsecureLocalMock },
+// With a broken configuration the server still starts, offering only
+// unanet_setup_status, so the assistant sees what is wrong instead of finding
+// no Unanet tools at all (which led assistants to open the Unanet website in a
+// browser instead).
+const auth: UnanetAuth | null = config.ok ? config.auth : null;
+if (config.ok) {
+	console.error(`[${SERVER_NAME}] Authentication configured successfully`);
+} else {
+	console.error(
+		`[${SERVER_NAME}] Configuration error: ${config.problem} (env file: ${envFile.path}${envFile.exists ? "" : ", not found"}). Starting in setup mode with unanet_setup_status only.`,
 	);
-
-	return {
-		username: process.env.UNANET_USERNAME || "",
-		password: process.env.UNANET_PASSWORD || "",
-		baseUrl: normalizedBaseUrl,
-		appName: process.env.UNANET_APP_NAME || DEFAULT_UNANET_APP_NAME,
-		customerId: process.env.UNANET_CUSTOMER_ID || undefined,
-	};
 }
 
-// Authentication configuration and startup validation.
-const auth = (() => {
-	try {
-		const configuredAuth = loadAuthFromEnv();
-		validateAuth(configuredAuth, { allowInsecureLocalMock });
-		console.error(`[${SERVER_NAME}] Authentication configured successfully`);
-		return configuredAuth;
-	} catch (error) {
-		console.error(
-			`[${SERVER_NAME}] Authentication error: ${errorMessage(error)}`,
-		);
-		process.exit(1);
-	}
-})();
+const setupStatusTool = {
+	name: "unanet_setup_status",
+	description:
+		"The Unanet connector is installed but not configured, so no Unanet data tools are available. Call this to get the exact problem and the fix, then tell the user. Do not open the Unanet website in a browser instead.",
+	inputSchema: z.object({}),
+	handler: async () => ({
+		success: false,
+		configured: false,
+		problem: config.ok ? null : config.problem,
+		envFile: envFile.path,
+		envFileExists: envFile.exists,
+		baseUrl: config.ok ? null : config.baseUrl,
+		howToFix: setupAdvice(envFile),
+	}),
+};
+
+const SERVER_INSTRUCTIONS = config.ok
+	? "Unanet (Nava's ERP: timesheets, expenses, leave, projects) is reached through these unanet_* tools, which act as the signed-in user with their own Unanet permissions. Use them for anything about Unanet; do not open the Unanet website in a browser."
+	: "The Unanet connector is not configured yet. Call unanet_setup_status and walk the user through the fix it returns. Do not open the Unanet website in a browser instead.";
+
+// Initialize server
+const server = new Server(
+	{
+		name: SERVER_NAME,
+		version: SERVER_VERSION,
+	},
+	{
+		capabilities: {
+			resources: {},
+			tools: {},
+		},
+		instructions: SERVER_INSTRUCTIONS,
+	},
+);
 
 // Tier 1 (default): self-service reads. Everything here is scoped to the
 // authenticated user's own records (or queues they own as an approver).
@@ -331,12 +330,16 @@ const mutatingTools = [
 	generateInvoiceTool,
 ];
 
-// Tool registration by tier.
-const tools = [
-	...selfServiceReadTools,
-	...(enableExtendedReadTools ? extendedReadTools : []),
-	...(enableWriteTools ? mutatingTools : []),
-];
+// Tool registration by tier. Without a valid configuration there are no data
+// tools; only unanet_setup_status is listed.
+const tools = auth
+	? [
+			...selfServiceReadTools,
+			...(enableExtendedReadTools ? extendedReadTools : []),
+			...(enableWriteTools ? mutatingTools : []),
+		]
+	: [];
+const listedTools = auth ? tools : [setupStatusTool];
 
 const duplicateToolNames = tools
 	.map((tool) => tool.name)
@@ -346,18 +349,18 @@ if (duplicateToolNames.length > 0) {
 }
 
 // Resource definitions. Additional resources are opt-in with the extended read flag.
-const resources = enableExtendedReadTools
+const resources = auth && enableExtendedReadTools
 	? [projectListResource, timesheetTemplatesResource]
 	: [];
 
 console.error(
-	`[${SERVER_NAME}] Registered ${tools.length} tool(s); extended reads: ${enableExtendedReadTools}; write tools: ${enableWriteTools}`,
+	`[${SERVER_NAME}] Registered ${listedTools.length} tool(s); extended reads: ${enableExtendedReadTools}; write tools: ${enableWriteTools}`,
 );
 
 // Handle list tools request
 server.setRequestHandler(ListToolsRequestSchema, async () => {
 	return {
-		tools: tools.map((tool) => ({
+		tools: listedTools.map((tool) => ({
 			name: tool.name,
 			description: tool.description,
 			inputSchema: zodToJsonSchema(tool.inputSchema),
@@ -368,6 +371,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Handle tool execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	const { name, arguments: args } = request.params;
+
+	if (!auth) {
+		if (name !== setupStatusTool.name) {
+			throw new Error(`Tool not found: ${name}. The Unanet connector is not configured; call ${setupStatusTool.name}.`);
+		}
+		return { content: [{ type: "text", text: JSON.stringify(await setupStatusTool.handler(), null, 2) }] };
+	}
 
 	const tool = tools.find((t) => t.name === name);
 	if (!tool) {
@@ -420,6 +430,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 		throw new Error(`Resource not found: ${uri}`);
 	}
 
+	if (!auth) throw new Error("The Unanet connector is not configured.");
 	const content = await resource.handler(auth);
 
 	return {
