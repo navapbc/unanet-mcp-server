@@ -34,16 +34,12 @@ In a Command Prompt in the folder:
 npm run check-setup
 ```
 
-`READY: signed in ...` means the credentials work. `NOT READY:` says what to fix in `.env`.
+`READY: signed in ...` means the credentials work. `NOT READY:` gives the problem and next steps: fix settings for configuration or credential errors, ask Finance for permission or license denials, or check connectivity for network failures. Do not change credentials for every failure.
 
 ## 5. Connect your Claude app
 
 - **Claude Desktop:** right-click the Claude icon in the system tray, choose Quit, and start Claude Desktop again.
-- **Claude Code:** run this once, from the folder (adjust the path if you put it elsewhere), then start a new Claude Code session:
-
-  ```
-  claude mcp add --scope user unanet -- node "C:\UnanetMCP\unanet-mcp-server\dist\index.js"
-  ```
+- **Claude Code:** open PowerShell in the repository folder, run `npm run check-setup`, then run the `claude mcp add` command it prints. That generated command is quoted for PowerShell, **not Command Prompt**, so installation paths containing spaces or shell characters stay intact. Start a new Claude Code session afterwards.
 
 Then ask *"What are my Unanet leave balances?"* and compare the answer with Unanet yourself. Claude should use the `unanet` tools. If it opens the Unanet website in a browser instead, the connector is not connected: go back to step 4.
 
@@ -57,4 +53,4 @@ By default only your own records are readable. In `.env`, `UNANET_ENABLE_EXTENDE
 - **"Failed to install dependencies":** check your internet connection and run the script again. Do not turn off antivirus; send the error text to IT or Billy Hunt. "Access denied" errors also go to IT.
 - **Tools missing in the Claude app:** run `npm run check-setup` and fix what it reports. If only a tool called `unanet_setup_status` appears, the connector is running but `.env` has a problem; fix it and restart the app. For Claude Code, `claude mcp list` should show `unanet`.
 - **401 / authentication failed:** sign in to the Unanet website with the same username and password, then check `.env` for typos and the quoting rule above.
-- **403 / access forbidden:** your Unanet account lacks that permission. Ask Finance, not IT.
+- **403 / access forbidden:** your Unanet account lacks a permission or required license. Ask Finance, not IT; do not change credentials to fix it.

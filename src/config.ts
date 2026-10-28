@@ -42,7 +42,7 @@ export function loadEnvFile(): EnvFileStatus {
 
 export type ConfigResult =
 	| { ok: true; auth: UnanetAuth }
-	| { ok: false; problem: string; baseUrl: string | null };
+	| { ok: false; problem: string };
 
 /** Read and validate the Unanet settings from the environment. */
 export function loadConfig(): ConfigResult {
@@ -62,7 +62,6 @@ export function loadConfig(): ConfigResult {
 		return {
 			ok: false,
 			problem: error instanceof Error ? error.message : String(error),
-			baseUrl: rawBaseUrl,
 		};
 	}
 }

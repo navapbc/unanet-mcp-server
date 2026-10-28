@@ -250,7 +250,7 @@ echo
 if [[ "$setup_ok" == true ]]; then
 	echo "Setup complete."
 else
-	echo "Setup finished, but the sign-in check failed. Fix $PROJECT_DIR/.env as described above, then run: npm run check-setup"
+	echo "Setup finished, but the sign-in check failed. Follow the guidance above, then run: npm run check-setup"
 fi
 echo
 echo "Next steps:"

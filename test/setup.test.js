@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -28,8 +28,8 @@ function writeEnvFile(lines) {
 }
 
 // Start the server, run initialize + the given requests, return the replies by id.
-async function talk(env, requests) {
-	const child = spawn("node", [SERVER], { cwd: OUTSIDE, env });
+async function talk(env, requests, command = "node", args = [SERVER]) {
+	const child = spawn(command, args, { cwd: OUTSIDE, env });
 	let stdout = "";
 	let stderr = "";
 	child.stdout.on("data", (data) => (stdout += data));
@@ -152,8 +152,37 @@ describe("setup", () => {
 		const status = JSON.parse(byId[2].result.content[0].text);
 		expect(status.problem).toContain("origin only");
 		expect(status.envFileExists).toBe(true);
-		expect(status.baseUrl).toBe("https://navapbc.unanet.biz/platform/rest");
 		expect(stdout + stderr).not.toContain("very-secret-pw");
+	});
+
+	it.each([
+		"https://someone:url-secret@navapbc.unanet.biz",
+		"https://navapbc.unanet.biz/?token=url-secret",
+		"https://navapbc.unanet.biz/#url-secret",
+		"url-secret",
+		"Summer:2026",
+		"https:secret",
+	])("does not disclose a rejected address: %s", async (baseUrl) => {
+		const { byId, stdout, stderr } = await talk(cleanEnv({
+			UNANET_ENV_FILE: MISSING_ENV,
+			UNANET_USERNAME: "someone",
+			UNANET_PASSWORD: "separate-secret",
+			UNANET_BASE_URL: baseUrl,
+			UNANET_ENABLE_WRITE_TOOLS: "true",
+			UNANET_ENABLE_EXTENDED_READ_TOOLS: "true",
+		}), [
+			callTool("unanet_setup_status"),
+			listTools,
+			{ method: "resources/list", params: {} },
+			callTool("unanet_get_my_leave_balances"),
+		]);
+		expect(JSON.parse(byId[2].result.content[0].text).configured).toBe(false);
+		expect(byId[3].result.tools.map((tool) => tool.name)).toEqual(["unanet_setup_status"]);
+		expect(byId[4].result.resources).toEqual([]);
+		expect(byId[5].error).toBeDefined();
+		expect(stdout + stderr).not.toContain(baseUrl);
+		expect(stdout + stderr).not.toContain("url-secret");
+		expect(stdout + stderr).not.toContain("separate-secret");
 	});
 
 	describe("npm run check-setup", () => {
@@ -170,8 +199,35 @@ describe("setup", () => {
 			const result = check(mockEnv("test-pass"));
 			expect(result.status).toBe(0);
 			expect(result.stdout).toContain(`READY: signed in to ${MOCK_BASE_URL} as test-user`);
-			expect(result.stdout).toContain(`claude mcp add --scope user unanet -- node "${SERVER}"`);
 			expect(result.stdout).not.toContain("test-pass");
+		});
+
+		it("emits a command that starts the server from a shell-sensitive installation path", async () => {
+			const install = mkdtempSync(join(tmpdir(), "unanet '$HOME `echo expanded` "));
+			try {
+				cpSync(join(REPO, "dist"), join(install, "dist"), { recursive: true });
+				cpSync(join(REPO, "package.json"), join(install, "package.json"));
+				symlinkSync(join(REPO, "node_modules"), join(install, "node_modules"), "junction");
+				const env = cleanEnv(mockEnv("test-pass"));
+				const result = spawnSync("node", [join(install, "dist", "check-setup.js")], {
+					cwd: OUTSIDE, env, encoding: "utf8",
+				});
+				expect(result.status).toBe(0);
+				const registration = result.stdout.split("\n").find((line) => line.trim().startsWith("claude mcp add "));
+				// Run the emitted executable/argument tail through the named shell;
+				// no real Claude registration or user configuration is changed.
+				const launch = registration.trim().split(" -- ").slice(1).join(" -- ");
+				const shell = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
+				const shellArgs = process.platform === "win32"
+					? ["-NoProfile", "-Command", launch]
+					: ["-c", `exec ${launch}`];
+				const { byId } = await talk(env, [callTool("unanet_get_my_leave_balances")], shell, shellArgs);
+				const balances = JSON.parse(byId[2].result.content[0].text);
+				expect(balances.success).toBe(true);
+				expect(balances.primaryLeaveBalance.balanceHours).toBe(112.69);
+			} finally {
+				rmSync(install, { recursive: true, force: true });
+			}
 		});
 
 		it("reports NOT READY with the reason for a rejected password, a bad address and missing settings", () => {

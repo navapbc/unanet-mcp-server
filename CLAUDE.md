@@ -8,7 +8,7 @@ The user wants Unanet tools in their Claude app. Do this, in order:
 
 1. `npm install && npm run build`.
 2. Credentials: on a Mac have the user run `./setup-mac.sh` in their own terminal (it asks for the password, writes `.env`, registers with Claude Desktop and Claude Code, and checks the sign-in). Otherwise the user copies `.env.example` to `.env` and types their username and password into it. Never ask for, receive or write the password yourself; if they paste it into chat, tell them to change it.
-3. `npm run check-setup` must print `READY`. If it prints `NOT READY`, fix what it names in `.env` (most often `UNANET_BASE_URL`, which must be exactly `https://navapbc.unanet.biz`) and run it again.
+3. `npm run check-setup` must print `READY`. On `NOT READY`, follow the reported cause: the user corrects `.env` for configuration or credential errors, asks Finance for permission or license denials, or checks connectivity for network failures. Do not edit credentials for every failure.
 4. Register for Claude Code if the script did not: `claude mcp add --scope user unanet -- node "$PWD/dist/index.js"` from this folder. The user then starts a new session; `/mcp` lists `unanet`.
 5. Test by calling `unanet_get_my_leave_balances` and asking the user to compare with Unanet.
 

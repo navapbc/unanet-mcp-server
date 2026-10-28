@@ -186,7 +186,6 @@ const setupStatusTool = {
 		problem: config.ok ? null : config.problem,
 		envFile: envFile.path,
 		envFileExists: envFile.exists,
-		baseUrl: config.ok ? null : config.baseUrl,
 		howToFix: setupAdvice(envFile),
 	}),
 };

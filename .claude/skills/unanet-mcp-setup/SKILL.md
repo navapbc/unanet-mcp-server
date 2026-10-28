@@ -69,7 +69,7 @@ In Mode A you may run `npm install && npm run build` yourself first so the scrip
 
 ### 4. Check, connect, verify
 
-1. `npm run check-setup` in the repo folder must print `READY: signed in to https://navapbc.unanet.biz as <user>`. On `NOT READY`, fix what it names in `.env` (the user edits it) and run it again. Don't move on until it says READY.
+1. `npm run check-setup` in the repo folder must print `READY: signed in to https://navapbc.unanet.biz as <user>`. On `NOT READY`, follow its guidance: the user edits `.env` for configuration or credential errors, asks Finance about permission or license denials, or checks connectivity for network failures. Do not edit credentials for every failure. Don't move on until it says READY.
 2. **Claude Code:** `claude mcp list` shows `unanet`; if not, run `claude mcp add --scope user unanet -- node "$PWD/dist/index.js"` from the repo folder. The user starts a **new** session; `/mcp` lists `unanet` as connected. **Claude Desktop:** fully quit (Cmd+Q on Mac; tray icon → Quit on Windows) and reopen; the MCP process only starts on launch.
 3. Ask: *"What are my Unanet leave balances?"* Claude should call `unanet_get_my_leave_balances`. The user compares the numbers with Unanet themselves. Matching numbers are the test; "the tool responded" is not.
 
