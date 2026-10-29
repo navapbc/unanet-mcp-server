@@ -29,6 +29,8 @@ cd unanet-mcp-server
 
 The script installs and builds the server, asks for your Unanet address (press Enter for `https://navapbc.unanet.biz`), username and password, and writes them to `.env` in this folder (mode 600, git-ignored). It then registers the server with Claude Desktop (if installed) and offers to register it with Claude Code (if the `claude` command exists), and finally signs in once to check the credentials.
 
+Claude Code registration never removes an existing entry. If adding fails, including because `unanet` already exists, setup stops with a nonzero exit before checking the sign-in. To keep an existing entry, rerun the installer and answer N to adding it to Claude Code. You can run `npm run check-setup` separately.
+
 Windows: double-click `setup-windows.bat` and follow [README-WINDOWS.md](README-WINDOWS.md).
 
 ### Check it
@@ -350,7 +352,7 @@ Start with `npm run check-setup`; it names the problem. More detail:
 - **Authentication failed (401).** Sign in to the Unanet website with the same username and password. A password containing `#`, or starting or ending with a space, must be wrapped in single quotes in `.env` (backticks if it also contains a single quote).
 - **Access forbidden (403).** Your Unanet account lacks permission or a required license. Ask Finance rather than changing your credentials.
 - **No `unanet_*` tools in the client.** See [If the tools don't show up](#if-the-tools-dont-show-up). Claude Desktop logs are under Settings → Developer; for Claude Code use `claude mcp list` and `/mcp`.
-- **Moved the installation or removed a Node.js version.** Re-run the installer so the Claude Code registration points to the current server and Node.js executable.
+- **Moved the installation or removed a Node.js version.** The installer will not replace an existing Claude Code entry. Run `claude mcp get unanet` yourself to inspect its scope, command, arguments and environment. **This can display passwords: keep the output private, do not paste it into chat, and do not ask an assistant to run it.** Before replacing anything, privately save those settings so you can restore them if adding fails. Only when you intend to replace a user-scope entry, remove it with `claude mcp remove --scope user unanet`, then add the current command and server path using the instructions above. Preserve any custom environment settings, especially `UNANET_ENV_FILE`; do not put passwords in shell commands or chat. For entries in another scope, update that scope instead. Run `npm run check-setup` and start a new Claude Code session afterwards.
 - **Windows.** The Windows script is best-effort and less exercised than the Mac path; see [README-WINDOWS.md](README-WINDOWS.md).
 
 ## License

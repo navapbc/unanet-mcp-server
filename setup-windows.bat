@@ -108,8 +108,7 @@ echo Next steps:
 echo 1. Check the sign-in:  npm run check-setup
 echo 2. Claude Desktop: fully quit and reopen it.
 echo    Claude Code: open PowerShell in this folder, run npm run check-setup,
-echo    then run the PowerShell registration command it prints.
-echo    then start a new Claude Code session.
+echo    then run the PowerShell registration command it prints and start a new Claude Code session.
 echo 3. Ask Claude: "Show my Unanet leave balances." It should use the unanet tools, never a web browser.
 echo 4. If the tools are missing, run npm run check-setup and fix what it reports.
 echo.

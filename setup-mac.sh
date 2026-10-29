@@ -69,13 +69,17 @@ configure_claude_code() {
 	if ! ask_yes_no "Add the connector to Claude Code (all your projects)?" "Y"; then
 		return 0
 	fi
-	# Replace any earlier registration so the path is current.
-	claude mcp remove --scope user unanet >/dev/null 2>&1 || true
+	# Add refuses an existing entry without deleting its command or environment.
 	if claude mcp add --scope user unanet -- "$(command -v node)" "$PROJECT_DIR/dist/index.js"; then
 		echo "Added 'unanet' to Claude Code. Start a new Claude Code session; /mcp should show it connected."
 	else
-		echo "Could not add the connector to Claude Code. Run this yourself:"
-		echo "  claude mcp add --scope user unanet -- $(shell_quote "$(command -v node)") $(shell_quote "$PROJECT_DIR/dist/index.js")"
+		echo "Could not add the connector to Claude Code; setup stopped before the sign-in check."
+		echo "An existing 'unanet' entry was not removed or replaced; it may already be the one you want."
+		echo "To inspect it, run 'claude mcp get unanet' yourself. It displays environment values that may contain passwords; do not share its output in chat."
+		echo "If you want to keep that entry, rerun this installer and answer N to adding it to Claude Code."
+		echo "Otherwise, see README.md for deliberately replacing a moved installation while preserving your settings."
+		echo "Run 'npm run check-setup' separately to check the sign-in."
+		return 1
 	fi
 }
 
