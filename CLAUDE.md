@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## If you are here to install or use the connector (not to change its code)
+
+The user wants Unanet tools in their Claude app. Do this, in order:
+
+1. `npm install && npm run build`.
+2. Credentials: on a Mac have the user run `./setup-mac.sh` in their own terminal (it asks for the password, writes `.env`, registers with Claude Desktop and Claude Code, and checks the sign-in). Otherwise the user copies `.env.example` to `.env` and types their username and password into it. Never ask for, receive or write the password yourself; if they paste it into chat, tell them to change it.
+3. `npm run check-setup` must print `READY`. On `NOT READY`, follow the reported cause: the user corrects `.env` for configuration or credential errors, asks Finance for permission or license denials, or checks connectivity for network failures. Do not edit credentials for every failure.
+4. Register for Claude Code if the script did not: `claude mcp add --scope user unanet -- node "$PWD/dist/index.js"` from this folder. The user then starts a new session; `/mcp` lists `unanet`.
+5. Test by calling `unanet_get_my_leave_balances` and asking the user to compare with Unanet.
+
+Unanet work goes through the `unanet_*` tools only. **Never open the Unanet website in a browser** to install, test or fetch data. If no `unanet_*` tools are available, or only `unanet_setup_status`, the connector is not configured or not registered: call `unanet_setup_status` if present, or run `npm run check-setup`, and fix that. README.md "Install" has the details.
+
 ## Repository Operations
 
 - Pushes to `navapbc/unanet-mcp-server` should use Billy's `billyhunt` GitHub account, not `Billy-Hunt_njdol`.
@@ -26,14 +38,14 @@ npm run clean    # Remove dist/ directory
 
 ## Architecture Overview
 
-This is an MCP (Model Context Protocol) server that bridges Claude Desktop with Unanet GovCon ERP. The architecture follows a tool-based pattern where each Unanet operation is exposed as an MCP tool.
+This is an MCP (Model Context Protocol) server that connects MCP clients (Claude Code, Claude Desktop) with Unanet GovCon ERP. The architecture follows a tool-based pattern where each Unanet operation is exposed as an MCP tool.
 
 ### Core Components
 
 **MCP Server (`src/index.ts`)**
-- Implements stdio transport (communicates via stdin/stdout with Claude Desktop)
+- Implements stdio transport (communicates via stdin/stdout with the MCP client)
 - Registers all tools and resources with the MCP SDK
-- Validates authentication on startup
+- Loads `.env` from the repository folder (`src/config.ts`, next to the code, not the client's working directory; `UNANET_ENV_FILE` overrides) and validates it on startup. With a bad configuration it does not exit: it starts in setup mode with a single `unanet_setup_status` tool that explains the problem
 - Routes tool calls to appropriate handlers
 
 **Authentication (`src/auth.ts`)**
@@ -126,5 +138,5 @@ npm run dev
 
 - Server runs as stdio transport (not HTTP) - it communicates through standard input/output
 - All console.error() calls are for logging (stdout is reserved for MCP protocol)
-- Environment variables can also be passed via Claude Desktop config instead of .env file
-- The server validates auth on startup and exits if credentials are missing
+- Environment variables can also be passed via the MCP client's config (`env` block, `claude mcp add -e`); they win over `.env`
+- `npm run check-setup` (`src/check-setup.ts`) signs in once and reports READY / NOT READY

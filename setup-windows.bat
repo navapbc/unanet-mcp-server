@@ -105,9 +105,12 @@ echo   Setup Complete!
 echo ============================================
 echo.
 echo Next steps:
-echo 1. Fully quit and reopen Claude Desktop.
-echo 2. Ask Claude: "Show my Unanet leave balances."
-echo 3. If tools do not appear, check Claude Desktop's MCP logs.
+echo 1. Check the sign-in:  npm run check-setup
+echo 2. Claude Desktop: fully quit and reopen it.
+echo    Claude Code: open PowerShell in this folder, run npm run check-setup,
+echo    then run the PowerShell registration command it prints and start a new Claude Code session.
+echo 3. Ask Claude: "Show my Unanet leave balances." It should use the unanet tools, never a web browser.
+echo 4. If the tools are missing, run npm run check-setup and fix what it reports.
 echo.
 echo Note: This setup stores credentials only in the local .env file.
 echo The Claude Desktop config points to this project and does not contain your password.

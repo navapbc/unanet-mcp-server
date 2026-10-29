@@ -23,7 +23,7 @@ Please do NOT open public issues for security vulnerabilities.
 2. **Access Control**
    - Limit MCP server to localhost only
    - Use firewall rules if exposing remotely
-   - Audit who has access to Claude Desktop with Unanet
+   - Audit who has access to the Claude app (Claude Code or Claude Desktop) with the Unanet connector
 
 3. **Data Protection**
    - Run in isolated environments
@@ -44,7 +44,7 @@ Please do NOT open public issues for security vulnerabilities.
    - Review new dependencies carefully
 
 3. **Error Handling**
-   - Never expose system paths in errors
+   - Never expose system paths in errors, except where the user needs them locally to fix setup (`unanet_setup_status` and `npm run check-setup` name the local `.env` file)
    - Mask sensitive data in logs
    - Use generic error messages for auth failures
 
