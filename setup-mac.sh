@@ -53,14 +53,52 @@ major_version() {
 	printf '%s' "${raw%%.*}"
 }
 
+# Prints why a base URL would be refused, using the server's own check.
+# Returns 0 (nothing printed) when the URL is acceptable.
+base_url_error() {
+	local check='import { validateUnanetBaseUrl } from "./dist/auth.js"; try { validateUnanetBaseUrl(process.env.UNANET_CANDIDATE_URL); } catch (error) { console.log(error.message); process.exit(1); }'
+	UNANET_CANDIDATE_URL="$1" node --input-type=module -e "$check" 2>/dev/null
+}
+
+configure_claude_code() {
+	if ! command -v claude >/dev/null 2>&1; then
+		echo "Claude Code (the 'claude' command) is not installed; skipping. To add the connector later run:"
+		echo "  claude mcp add --scope user unanet -- $(shell_quote "$(command -v node)") $(shell_quote "$PROJECT_DIR/dist/index.js")"
+		return 0
+	fi
+	if ! ask_yes_no "Add the connector to Claude Code (all your projects)?" "Y"; then
+		return 0
+	fi
+	# Add refuses an existing entry without deleting its command or environment.
+	if claude mcp add --scope user unanet -- "$(command -v node)" "$PROJECT_DIR/dist/index.js"; then
+		echo "Added 'unanet' to Claude Code. Start a new Claude Code session; /mcp should show it connected."
+	else
+		echo "Could not add the connector to Claude Code; setup stopped before the sign-in check."
+		echo "An existing 'unanet' entry was not removed or replaced; it may already be the one you want."
+		echo "To inspect it, run 'claude mcp get unanet' yourself. It displays environment values that may contain passwords; do not share its output in chat."
+		echo "If you want to keep that entry, rerun this installer and answer N to adding it to Claude Code."
+		echo "Otherwise, see README.md for deliberately replacing a moved installation while preserving your settings."
+		echo "Run 'npm run check-setup' separately to check the sign-in."
+		return 1
+	fi
+}
+
 write_env_file() {
 	echo
 	echo "Let's create your local .env file. It stays on this machine and is git-ignored."
 	echo
 
 	local base_url username password enable_reads enable_writes
-	read -r -p "Unanet base URL [$DEFAULT_BASE_URL]: " base_url
-	base_url="${base_url:-$DEFAULT_BASE_URL}"
+	while true; do
+		read -r -p "Unanet base URL [$DEFAULT_BASE_URL]: " base_url
+		base_url="${base_url:-$DEFAULT_BASE_URL}"
+		local base_url_problem
+		if base_url_problem="$(base_url_error "$base_url")"; then
+			break
+		fi
+		echo "That address will not work: $base_url_problem"
+		echo "Press Enter to use $DEFAULT_BASE_URL (the Nava tenant)."
+	done
 
 	read -r -p "Unanet username: " username
 	while [[ -z "$username" ]]; do
@@ -195,13 +233,32 @@ else
 	write_env_file
 fi
 
-configure_claude_desktop
+if [[ -d "/Applications/Claude.app" || -d "$(dirname "$CLAUDE_CONFIG")" ]]; then
+	configure_claude_desktop
+else
+	echo "Claude Desktop is not installed; skipping its config."
+fi
 
 echo
-echo "Setup complete."
+configure_claude_code
+
+echo
+echo "Checking that the connector can sign in to Unanet..."
+if node dist/check-setup.js; then
+	setup_ok=true
+else
+	setup_ok=false
+fi
+
+echo
+if [[ "$setup_ok" == true ]]; then
+	echo "Setup complete."
+else
+	echo "Setup finished, but the sign-in check failed. Follow the guidance above, then run: npm run check-setup"
+fi
 echo
 echo "Next steps:"
-echo "1. Fully quit and reopen Claude Desktop."
-echo "2. Ask Claude: 'Show my Unanet leave balances.'"
-echo "3. If Claude does not see the unanet server, check Claude Desktop's MCP logs."
+echo "1. Claude Code: start a new session. Claude Desktop: fully quit and reopen it."
+echo "2. Ask Claude: 'Show my Unanet leave balances.' It should use the unanet tools, never a web browser."
+echo "3. If the tools are missing, run 'npm run check-setup' in $PROJECT_DIR and fix what it reports."
 echo
